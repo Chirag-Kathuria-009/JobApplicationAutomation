@@ -1,0 +1,8 @@
+playwright
+beautifulsoup4
+pandas
+sentence-transformers
+pymupdf
+psycopg2
+sqlalchemy
+prefect
