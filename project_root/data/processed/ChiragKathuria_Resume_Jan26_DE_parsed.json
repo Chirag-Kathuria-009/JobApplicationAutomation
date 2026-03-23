@@ -1,0 +1,206 @@
+{
+  "contact": {
+    "name": "Chirag Kathuria",
+    "email": "chiragkathuria24de@gmail.com",
+    "phone": "+49 155 106 33285",
+    "location": "Trier, Germany",
+    "linkedin": "linkedin.com/in/chirag-kathuria",
+    "github": "github.com/Chirag-Kathuria-009",
+    "website": null,
+    "other_links": []
+  },
+  "summary": "Data Engineer with 2+ years of experience building ETL pipelines, SQL-based analytics, and Power BI dashboards to support data-driven decision-making. Strong background in Python, SQL, Azure Data Factory, Databricks, data modeling, automation, and KPI reporting in enterprise environments. With immediate availability for full-time roles and flexible relocation across Germany.",
+  "skills": {
+    "programming_languages": [
+      "Python",
+      "SQL",
+      "R",
+      "T-SQL",
+      "Java"
+    ],
+    "frameworks_and_tools": [
+      "Azure Data Factory",
+      "Databricks",
+      "PySpark",
+      "DeltaLake",
+      "Snowflake",
+      "Power BI",
+      "DAX",
+      "Matplotlib",
+      "Seaborn",
+      "Scikit-learn",
+      "XGBoost",
+      "LightGBM",
+      "TensorFlow",
+      "Pandas",
+      "NumPy",
+      "SpaCy",
+      "NLTK",
+      "Git",
+      "Jenkins",
+      "Azure DevOps",
+      "Docker",
+      "CI/CD",
+      "FastAPI",
+      "MLflow",
+      "Polars",
+      "HuggingFace Transformers",
+      "BERT",
+      "Grafana",
+      "GitLab"
+    ],
+    "cloud_and_data": [
+      "AWS S3",
+      "AWS EC2",
+      "Azure Data Factory",
+      "Databricks",
+      "Snowflake",
+      "DeltaLake",
+      "SQL Server",
+      "PostgreSQL"
+    ],
+    "soft_skills": [
+      "Cross-functional collaboration",
+      "Documentation",
+      "Leadership"
+    ],
+    "other": [
+      "ETL",
+      "Data Modeling",
+      "KPI Reporting",
+      "NLP"
+    ]
+  },
+  "experience": [
+    {
+      "title": "Data Engineer",
+      "company": "Bajaj Finserv",
+      "location": "Pune, India",
+      "start_date": "Jul 2022",
+      "end_date": "Aug 2024",
+      "is_current": false,
+      "responsibilities": [
+        "Designed and maintained automated ETL pipelines using Python, SQL, and Azure Data Factory to integrate data from multiple sources for analytics and reporting improving issue detection TAT from 30 minutes to 10 minutes.",
+        "Modernized legacy data pipelines, improving compute efficiency by 35% and reducing processing time by 25% while ensuring 99.9% data accuracy. Collaborated closely with cross-functional teams (product, business, engineering) and documented data models and pipelines for reuse and maintainability.",
+        "Developed and optimized Power BI dashboards for KPI tracking and operational reporting, reducing reporting latency by 60% through automated refreshes. Automated 10+ manual reporting and data workflows, reducing operational overhead by 50%.",
+        "Dashboards enabled leadership to detect a 15% drop in channel usage, triggering a campaign that increased engagement by 20%.",
+        "Integrated SQL-based analytical datasets to support process optimization and stakeholder decision-making, improving query performance by 30%.",
+        "Led large-scale database integration projects (KYC / mandate systems), designing scalable data models supporting 1M+ records with zero downtime."
+      ],
+      "technologies_used": [
+        "Python",
+        "SQL",
+        "Azure Data Factory",
+        "Power BI",
+        "DAX"
+      ]
+    },
+    {
+      "title": "Data Engineer Intern",
+      "company": "Bajaj Finserv",
+      "location": "Pune, India",
+      "start_date": "Jan 2022",
+      "end_date": "Jun 2022",
+      "is_current": false,
+      "responsibilities": [
+        "Built CI/CD pipelines for database deployments using Jenkins and Azure DevOps, reducing deployment failures by 50%. Integrated Grafana and GitLab to streamline development and monitoring workflows.",
+        "Supported data engineering workflows with Git-based version control and deployment automation increased 80%.",
+        "Automated database release processes and monitoring, improving team productivity by 30%."
+      ],
+      "technologies_used": [
+        "Jenkins",
+        "Azure DevOps",
+        "Git",
+        "Grafana",
+        "GitLab",
+        "CI/CD"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "M.S.",
+      "field": "Data Science",
+      "institution": "Universität Trier",
+      "location": "Trier, Germany",
+      "start_date": "2024",
+      "end_date": "Present",
+      "gpa": null,
+      "achievements": []
+    },
+    {
+      "degree": "B.Tech",
+      "field": "Computer Science",
+      "institution": "VIT University",
+      "location": "Vellore, India",
+      "start_date": "2018",
+      "end_date": "2022",
+      "gpa": "8.43/10",
+      "achievements": []
+    }
+  ],
+  "certifications": [],
+  "projects": [
+    {
+      "name": "Fraud Transaction Detection Pipeline",
+      "description": "Built a scalable end-to-end pipeline processing 6M+ real-time transactions, using Polars-based ETL and LightGBM for fraud classification. Achieving ~93% ROC-AUC on imbalance datasets. Deployed inference via FastAPI with sub-200 ms latency and containerized releases using Docker and CI/CD pipelines.",
+      "technologies": [
+        "Python",
+        "Polars",
+        "LightGBM",
+        "FastAPI",
+        "Docker",
+        "MLflow"
+      ],
+      "url": null
+    },
+    {
+      "name": "Wikipedia Fact Verification (NLP)",
+      "description": "Developed an automated fact-checking system on the FEVER dataset (185k+ claims) using BERT-based NLI models. Implemented hybrid keyword + semantic retrieval from Wikipedia and achieved ~85% validation accuracy across claim categories.",
+      "technologies": [
+        "HuggingFace Transformers",
+        "BERT",
+        "TensorFlow"
+      ],
+      "url": null
+    },
+    {
+      "name": "Twitter Bot Detection System",
+      "description": "Analyzed 100k+ Twitter profiles using metadata and textual features for bot detection. Built ensemble ML models with 85%+ accuracy, improving identification of automated behavior.",
+      "technologies": [
+        "Python",
+        "NLTK",
+        "Scikit-learn",
+        "Pandas"
+      ],
+      "url": null
+    }
+  ],
+  "languages": [],
+  "awards_and_achievements": [],
+  "publications": [],
+  "volunteer_work": [],
+  "inferred_insights": {
+    "years_of_experience": 3,
+    "seniority_level": "Mid-level",
+    "primary_domain": "Data Engineering",
+    "key_strengths": [
+      "ETL pipelines",
+      "Azure Data Factory",
+      "Power BI dashboards",
+      "SQL optimization",
+      "CI/CD automation",
+      "Data modeling"
+    ],
+    "open_to_relocation": true,
+    "visa_status_mentioned": false,
+    "current_location": "Trier, Germany"
+  },
+  "_meta": {
+    "source_file": "ChiragKathuria_Resume_Jan26_DE.pdf",
+    "page_count": 1,
+    "parsed_at": "2026-03-23T08:18:56",
+    "parser_version": "2.0",
+    "pdf_embedded_author": null
+  }
+}
