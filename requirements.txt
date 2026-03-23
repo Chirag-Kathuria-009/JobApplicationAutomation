@@ -6,3 +6,6 @@ pymupdf
 psycopg2
 sqlalchemy
 prefect
+spacy
+pymupdf4llm
+anthropic
