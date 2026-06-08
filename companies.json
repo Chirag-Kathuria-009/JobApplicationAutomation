@@ -1,0 +1,572 @@
+{
+  "meta": {
+    "owner": "Chirag Kathuria",
+    "last_updated": "2026-06-02",
+    "total_companies": 57,
+    "target_roles": [
+      "Data Engineer",
+      "Data Analyst",
+      "Data Scientist",
+      "Analytics Engineer",
+      "BI Engineer",
+      "BI Developer",
+      "ML Engineer",
+      "Data Platform Engineer",
+      "Junior Data Engineer",
+      "Junior Data Scientist",
+      "Werkstudent Data",
+      "Working Student Data"
+    ],
+    "location_filter": [
+      "Germany",
+      "Remote",
+      "Luxembourg"
+    ],
+    "language_filter": [
+      "English",
+      "English/German"
+    ],
+    "exclude_german_only": true
+  },
+  "companies": [
+    {
+      "name": "Snowflake",
+      "category": "Data & Cloud",
+      "careers_url": "https://careers.snowflake.com",
+      "ats": "Ashby",
+      "ats_handle": "snowflake",
+      "fit_tier": "A",
+      "fit_reason": "Core stack match — Snowflake, dbt, Python. Data engineering roles common.",
+      "notes": "Search: Data Engineer, Analytics Engineer"
+    },
+    {
+      "name": "Databricks",
+      "category": "Data & Cloud",
+      "careers_url": "https://www.databricks.com/company/careers/open-positions",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "Direct Databricks + PySpark + Delta Lake experience. Strong product fit.",
+      "notes": "Search: Data Engineer, Solutions Engineer"
+    },
+    {
+      "name": "N26",
+      "category": "Banking & Finance",
+      "careers_url": "https://n26.com/en-eu/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "FinTech + GDPR compliance + Data Engineering background is exact fit.",
+      "notes": "Berlin-based. English-first company. Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Trade Republic",
+      "category": "Banking & Finance",
+      "careers_url": "https://traderepublic.com/careers",
+      "ats": "Greenhouse",
+      "ats_handle": "traderepublic",
+      "fit_tier": "A",
+      "fit_reason": "Fast-growing German FinTech, English-first, strong data team.",
+      "notes": "Berlin. On Greenhouse (board token: traderepublic). Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Klarna",
+      "category": "Banking & Finance",
+      "careers_url": "https://www.klarna.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "FinTech, English-first, strong ML and data engineering culture.",
+      "notes": "[SKIP] Deel job board (jobs.deel.com), no public JSON API. Search: Data Engineer, ML Engineer, Data Scientist",
+      "skip": true
+    },
+    {
+      "name": "SumUp",
+      "category": "Banking & Finance",
+      "careers_url": "https://www.sumup.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "FinTech, Berlin, English-first, payments domain matches fraud detection experience.",
+      "notes": "Search: Data Engineer, Data Analyst, Analytics Engineer"
+    },
+    {
+      "name": "Solarisbank",
+      "category": "Banking & Finance",
+      "careers_url": "https://www.solarisgroup.com/en/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "German FinTech + DORA/BaFin compliance — rare differentiator for Chirag.",
+      "notes": "Berlin. Directly relevant DORA project experience."
+    },
+    {
+      "name": "Raisin",
+      "category": "Banking & Finance",
+      "careers_url": "https://www.raisin.com/en/corporate/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "German FinTech, English-first, data-heavy product.",
+      "notes": "Berlin. Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Celonis",
+      "category": "Enterprise Software",
+      "careers_url": "https://careers.celonis.com",
+      "ats": "Greenhouse",
+      "fit_tier": "A",
+      "fit_reason": "Process mining + analytics platform. Data engineering and Python skills directly applicable.",
+      "notes": "Munich. Search: Data Engineer, Analytics Engineer"
+    },
+    {
+      "name": "Zalando",
+      "category": "E-Commerce & Retail",
+      "careers_url": "https://zalando.wd3.myworkdayjobs.com/ZalandoSiteWD",
+      "ats": "Workday",
+      "fit_tier": "A",
+      "fit_reason": "Large data platform, English-first, Berlin, known for strong data team.",
+      "notes": "Search: Data Engineer, Data Scientist, Analytics Engineer"
+    },
+    {
+      "name": "About You",
+      "category": "E-Commerce & Retail",
+      "careers_url": "https://careers.smartrecruiters.com/aboutyougmbh",
+      "ats": "SmartRecruiters",
+      "ats_handle": "aboutyougmbh",
+      "fit_tier": "A",
+      "fit_reason": "Hamburg tech company, English-speaking, strong data culture.",
+      "notes": "Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "SAP",
+      "category": "Enterprise Software",
+      "careers_url": "https://jobs.sap.com",
+      "ats": "Proprietary",
+      "fit_tier": "B",
+      "fit_reason": "Large German tech employer, many data roles, but competitive and bureaucratic.",
+      "notes": "[SKIP] SuccessFactors, no clean public API. Walldorf/Berlin/Munich. Filter: English language, Data roles",
+      "skip": true
+    },
+    {
+      "name": "Accenture",
+      "category": "Consulting",
+      "careers_url": "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers",
+      "ats": "Workday",
+      "fit_tier": "B",
+      "fit_reason": "Data engineering consulting roles in Germany, English acceptable.",
+      "notes": "Search: Data Engineer, Analytics Consultant, BI Developer"
+    },
+    {
+      "name": "Deloitte",
+      "category": "Consulting",
+      "careers_url": "https://careers.smartrecruiters.com/Deloitte6",
+      "ats": "SmartRecruiters",
+      "ats_handle": "Deloitte6",
+      "fit_tier": "B",
+      "fit_reason": "Analytics and data practice in Germany, some English-first roles.",
+      "notes": "[SKIP] Global SmartRecruiters board (Deloitte6) has no German roles; DE entity on Taleo. On SmartRecruiters (Deloitte6). Search: Data Engineer, Analytics Consultant",
+      "skip": true
+    },
+    {
+      "name": "PwC",
+      "category": "Consulting",
+      "careers_url": "https://pwc.wd3.myworkdayjobs.com/Global_Experienced_Careers",
+      "ats": "Workday",
+      "fit_tier": "B",
+      "fit_reason": "Technology consulting roles, GDPR/compliance background is useful.",
+      "notes": "On Workday (pwc.wd3, Global_Experienced_Careers; Campus_Careers has internships). Search: Technology Consultant Data"
+    },
+    {
+      "name": "Deutsche Bank",
+      "category": "Banking & Finance",
+      "careers_url": "https://careers.db.com",
+      "ats": "Proprietary",
+      "fit_tier": "B",
+      "fit_reason": "Frankfurt HQ, large data team, DORA/BaFin compliance very relevant.",
+      "notes": "[SKIP] Proprietary SPA, no public API. Search: Data Engineer, Data Analyst — filter English language",
+      "skip": true
+    },
+    {
+      "name": "Commerzbank",
+      "category": "Banking & Finance",
+      "careers_url": "https://www.commerzbank.de/group/careers",
+      "ats": "Proprietary",
+      "fit_tier": "B",
+      "fit_reason": "Frankfurt-based, large bank, compliance data roles relevant.",
+      "notes": "[SKIP] Proprietary SPA + mostly German roles. Many roles require German — filter carefully",
+      "skip": true
+    },
+    {
+      "name": "DWS",
+      "category": "Banking & Finance",
+      "careers_url": "https://careers.dws.com",
+      "ats": "Proprietary",
+      "fit_tier": "B",
+      "fit_reason": "Asset management, Frankfurt, data analytics roles exist.",
+      "notes": "[SKIP] Proprietary SPA, no public API. Deutsche Bank subsidiary. Filter English roles.",
+      "skip": true
+    },
+    {
+      "name": "Allianz",
+      "category": "Banking & Finance",
+      "careers_url": "https://careers.allianz.com",
+      "ats": "Workday",
+      "fit_tier": "B",
+      "fit_reason": "Munich, large data team, insurance analytics.",
+      "notes": "[SKIP] Phenom portal (careers.allianz.com), API not resolved. Search: Data Engineer, Data Analyst, BI Developer",
+      "skip": true
+    },
+    {
+      "name": "ServiceNow",
+      "category": "Enterprise Software",
+      "careers_url": "https://careers.smartrecruiters.com/servicenow",
+      "ats": "SmartRecruiters",
+      "ats_handle": "servicenow",
+      "fit_tier": "B",
+      "fit_reason": "SaaS platform, data engineering roles, English-first.",
+      "notes": "Search: Data Engineer, Analytics Engineer"
+    },
+    {
+      "name": "Personio",
+      "category": "Enterprise Software",
+      "careers_url": "https://www.personio.com/about-personio/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Munich HR-tech scale-up, English-first, strong data culture.",
+      "notes": "[SKIP] Own Personio recruiting, no public API. Search: Data Engineer, Analytics Engineer, Data Analyst",
+      "skip": true
+    },
+    {
+      "name": "UiPath",
+      "category": "Enterprise Software",
+      "careers_url": "https://www.uipath.com/company/careers",
+      "ats": "Ashby",
+      "ats_handle": "uipath",
+      "fit_tier": "B",
+      "fit_reason": "Automation platform, data roles, English company.",
+      "notes": "Search: Data Analyst, Data Engineer"
+    },
+    {
+      "name": "Trivago",
+      "category": "Travel & Mobility",
+      "careers_url": "https://careers.trivago.com",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Düsseldorf tech company, English-first, strong data team.",
+      "notes": "Search: Data Engineer, Data Scientist, Analytics Engineer"
+    },
+    {
+      "name": "Scout24",
+      "category": "Tech Startups",
+      "careers_url": "https://www.scout24.com/en/career",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Berlin, English-friendly, marketplace data.",
+      "notes": "Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Miro",
+      "category": "Tech Startups",
+      "careers_url": "https://miro.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Amsterdam/Berlin, English-first SaaS, data roles.",
+      "notes": "[SKIP] ATS unidentified (not GH/Lever/Ashby/SmartRecruiters). Search: Data Engineer, Analytics Engineer",
+      "skip": true
+    },
+    {
+      "name": "Adjust",
+      "category": "Tech Startups",
+      "careers_url": "https://adjust.recruitee.com",
+      "ats": "Recruitee",
+      "ats_handle": "adjust",
+      "fit_tier": "B",
+      "fit_reason": "Berlin, mobile analytics platform, data engineering.",
+      "notes": "Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Contentful",
+      "category": "Tech Startups",
+      "careers_url": "https://www.contentful.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Berlin SaaS, English-first, data roles.",
+      "notes": "Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "Flix",
+      "category": "Travel & Mobility",
+      "careers_url": "https://flix.careers",
+      "ats": "Greenhouse",
+      "ats_handle": "flix",
+      "fit_tier": "B",
+      "fit_reason": "Munich, English-friendly, mobility data analytics.",
+      "notes": "On Greenhouse (board token: flix). Search: Data Engineer, Data Analyst, Data Scientist"
+    },
+    {
+      "name": "BioNTech",
+      "category": "Healthcare & Life Sciences",
+      "careers_url": "https://jobs.biontech.de",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Mainz, English-first, data science roles in biotech.",
+      "notes": "[SKIP] SuccessFactors (SAP), no public API. Search: Data Engineer, Data Scientist",
+      "skip": true
+    },
+    {
+      "name": "Ada Health",
+      "category": "Healthcare & Life Sciences",
+      "careers_url": "https://ada.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "B",
+      "fit_reason": "Berlin health-tech, English-first, ML/data roles.",
+      "notes": "Search: Data Engineer, ML Engineer"
+    },
+    {
+      "name": "Salesforce",
+      "category": "Enterprise Software",
+      "careers_url": "https://careers.salesforce.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Large US tech in Germany, competitive, but data roles exist.",
+      "notes": "[SKIP] Proprietary portal, no public API wired. Munich/Frankfurt. Search: Data Engineer, Analytics",
+      "skip": true
+    },
+    {
+      "name": "Google",
+      "category": "Big Tech",
+      "careers_url": "https://careers.google.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Highly competitive, but apply — data engineering background relevant.",
+      "notes": "[SKIP] Proprietary, careers API endpoint changed. Munich office. Search: Data Engineer, SWE Data",
+      "skip": true
+    },
+    {
+      "name": "Amazon",
+      "category": "Big Tech",
+      "careers_url": "https://www.amazon.jobs",
+      "ats": "Amazon",
+      "fit_tier": "C",
+      "fit_reason": "AWS/data roles in Germany, competitive but worth applying.",
+      "notes": "Public amazon.jobs JSON API, region countries DEU/LUX/NLD/AUT/CHE/FRA/BEL. Search: Data Engineer, Business Intelligence"
+    },
+    {
+      "name": "Microsoft",
+      "category": "Big Tech",
+      "careers_url": "https://careers.microsoft.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Azure stack is a direct match. Munich office.",
+      "notes": "[SKIP] Has JSON API but host blocked in dev sandbox; not wired yet. Search: Data Engineer, Azure Data",
+      "skip": true
+    },
+    {
+      "name": "Meta",
+      "category": "Big Tech",
+      "careers_url": "https://www.metacareers.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Very competitive, limited Germany presence.",
+      "notes": "[SKIP] Proprietary GraphQL, not wired. Apply opportunistically",
+      "skip": true
+    },
+    {
+      "name": "Apple",
+      "category": "Big Tech",
+      "careers_url": "https://jobs.apple.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Munich office, very competitive.",
+      "notes": "[SKIP] Proprietary, careers API endpoint changed. Apply opportunistically",
+      "skip": true
+    },
+    {
+      "name": "BMW Group",
+      "category": "Automotive",
+      "careers_url": "https://jobs.bmwgroup.com",
+      "ats": "Radancy",
+      "fit_tier": "C",
+      "fit_reason": "Munich, large data team, but German often required.",
+      "notes": "Radancy/TalentBrew portal (jobs.bmwgroup.com). Covers data roles + Praktikum/Werkstudent (EN+DE)."
+    },
+    {
+      "name": "Audi",
+      "category": "Automotive",
+      "careers_url": "https://www.audi.com/en/company/career.html",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Ingolstadt, German often required for automotive.",
+      "notes": "Filter English roles carefully"
+    },
+    {
+      "name": "Volkswagen Group",
+      "category": "Automotive",
+      "careers_url": "https://jobs.volkswagen-group.com",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Wolfsburg, German often required.",
+      "notes": "Filter English roles only"
+    },
+    {
+      "name": "Mercedes-Benz",
+      "category": "Automotive",
+      "careers_url": "https://jobs.mercedes-benz.com",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Stuttgart, German often required but data roles exist in English.",
+      "notes": "Search: Data Engineer, Data Analyst — filter English"
+    },
+    {
+      "name": "Bosch",
+      "category": "Automotive",
+      "careers_url": "https://www.bosch.com/careers",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Stuttgart, large data team, mix of German and English roles.",
+      "notes": "Filter English roles. Search: Data Engineer, Data Scientist"
+    },
+    {
+      "name": "Continental",
+      "category": "Automotive",
+      "careers_url": "https://jobs.continental.com",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Hannover, German often required.",
+      "notes": "Filter English roles only"
+    },
+    {
+      "name": "McKinsey",
+      "category": "Consulting",
+      "careers_url": "https://www.mckinsey.com/careers",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Very competitive, data analytics roles exist.",
+      "notes": "[SKIP] Proprietary portal, no public API wired. Apply opportunistically",
+      "skip": true
+    },
+    {
+      "name": "BCG",
+      "category": "Consulting",
+      "careers_url": "https://careers.bcg.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Data analytics consulting roles.",
+      "notes": "[SKIP] Proprietary portal, no public API wired. Apply opportunistically",
+      "skip": true
+    },
+    {
+      "name": "KPMG",
+      "category": "Consulting",
+      "careers_url": "https://home.kpmg/careers",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Data analytics and technology consulting.",
+      "notes": "German often required. Filter carefully."
+    },
+    {
+      "name": "Deutsche Telekom",
+      "category": "Telecom",
+      "careers_url": "https://careers.telekom.com/en",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Bonn, large data team, German usually required.",
+      "notes": "Filter English roles only"
+    },
+    {
+      "name": "Vodafone Germany",
+      "category": "Telecom",
+      "careers_url": "https://careers.vodafone.de",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Düsseldorf, some English roles in tech.",
+      "notes": "Search: Data Analyst, Data Engineer"
+    },
+    {
+      "name": "T-Systems",
+      "category": "Telecom",
+      "careers_url": "https://www.t-systems.com/de/en/careers",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Deutsche Telekom subsidiary, IT services, data roles.",
+      "notes": "Filter English roles"
+    },
+    {
+      "name": "Bayer",
+      "category": "Healthcare & Life Sciences",
+      "careers_url": "https://career.bayer.com",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Leverkusen, data science roles in pharma.",
+      "notes": "Search: Data Scientist, Data Engineer"
+    },
+    {
+      "name": "Siemens Healthineers",
+      "category": "Healthcare & Life Sciences",
+      "careers_url": "https://www.siemens-healthineers.com/careers",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Erlangen, medical data science roles.",
+      "notes": "Search: Data Engineer, Data Scientist"
+    },
+    {
+      "name": "E.ON",
+      "category": "Energy",
+      "careers_url": "https://careers.eon.com",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Essen, energy data analytics.",
+      "notes": "Search: Data Analyst, Data Engineer"
+    },
+    {
+      "name": "RWE",
+      "category": "Energy",
+      "careers_url": "https://www.rwe.com/en/careers",
+      "ats": "Workday",
+      "fit_tier": "C",
+      "fit_reason": "Essen, energy sector data.",
+      "notes": "Search: Data Engineer, Data Analyst"
+    },
+    {
+      "name": "eBay",
+      "category": "E-Commerce & Retail",
+      "careers_url": "https://careers.ebayinc.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Berlin/Dreilinden, marketplace data analytics.",
+      "notes": "[SKIP] Proprietary portal, no public API wired. Search: Data Engineer, Data Scientist",
+      "skip": true
+    },
+    {
+      "name": "Otto Group",
+      "category": "E-Commerce & Retail",
+      "careers_url": "https://www.otto.de/jobs",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Hamburg, German often required but data roles exist.",
+      "notes": "Filter English roles"
+    },
+    {
+      "name": "Deutsche Post DHL",
+      "category": "Logistics",
+      "careers_url": "https://careers.dhl.com",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Bonn, logistics data, German often required.",
+      "notes": "Filter English roles"
+    },
+    {
+      "name": "DB Schenker / Deutsche Bahn",
+      "category": "Logistics",
+      "careers_url": "https://www.dbschenker.com/careers",
+      "ats": "Proprietary",
+      "fit_tier": "C",
+      "fit_reason": "Frankfurt, logistics data, German often required.",
+      "notes": "Filter English roles only"
+    },
+    {
+      "name": "Infarm",
+      "category": "Tech Startups",
+      "careers_url": "https://www.infarm.com/careers",
+      "ats": "Greenhouse",
+      "fit_tier": "C",
+      "fit_reason": "Berlin agri-tech startup, English-first but niche domain.",
+      "notes": "Search: Data Engineer, Data Scientist"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+# ===========================================================================
+#  Secrets & API keys  — NEVER commit these
+# ===========================================================================
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
+# ===========================================================================
+#  Personal data (PII) — your real profile, resume and application history
+# ===========================================================================
+# Your real profile (contains address, phone, visa, salary, etc.).
+# A sanitised template is committed as profile.example.md instead.
+profile.md
+
+# Application tracker — full history, recruiter emails, etc.
+tracker.json
+tracker.db
+tracker.db-journal
+tracker.db-wal
+tracker.db-shm
+
+# ===========================================================================
+#  Generated artefacts — cover letters & tailored resumes (do NOT push)
+# ===========================================================================
+applications/*
+!applications/.gitkeep
+
+# Base resume source files (your personal CV). Keep the folder, drop the docs.
+BASE_RESUME/*
+!BASE_RESUME/.gitkeep
+
+# ===========================================================================
+#  Python
+# ===========================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ===========================================================================
+#  Playwright
+# ===========================================================================
+playwright-report/
+.playwright/
+test-results/
+
+# ===========================================================================
+#  Editor / OS noise
+# ===========================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
