@@ -130,7 +130,7 @@ def _docx_to_text(path: Path) -> str:
                 lines.append(line)
         return "\n".join(lines)
 
-
+# changes in resume logic
 def load_base_resume() -> str:
     """Load the base resume text from the BASE_RESUME/ folder.
 

@@ -60,7 +60,7 @@ def main():
         print(f"  -> Created {commits_today} commits for {commit_date.strftime('%Y-%m-%d')}")
 
     # Push to remote
-    if REPO_URL != "https://github.com/Chirag-Kathuria-009/JobApplicationAutomation.git":
+    if REPO_URL == "https://github.com/Chirag-Kathuria-009/JobApplicationAutomation.git":
         print("Pushing to remote repository...")
         try:
             run_command(f"git remote add origin {REPO_URL}")
