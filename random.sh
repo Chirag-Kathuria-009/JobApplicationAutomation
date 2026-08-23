@@ -2,8 +2,8 @@
 
 # CONFIGURATION
 FILE_NAME="history_log.txt"
-START_DATE="2026-08-17"   # Format: YYYY-MM-DD
-END_DATE="2026-08-22"     # Format: YYYY-MM-DD
+START_DATE="2026-08-22"   # Format: YYYY-MM-DD
+END_DATE="2026-08-17"     # Format: YYYY-MM-DD
 COMMIT_INTERVAL="1 day"   # Change frequency (e.g., "1 day", "2 days", "12 hours")
 
 # Initialize the file
