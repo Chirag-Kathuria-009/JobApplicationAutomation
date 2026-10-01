@@ -2,7 +2,7 @@
 job_pipeline/resume.py
 ======================
 Generates a job-tailored version of the base resume using the Claude API.
-Only invoked for strong matches (see run_pipeline.py) — Tier A/B roles scoring
+Only invoked for strong matches (see run_pipeline.py) — roles in any tier scoring
 >= 70%. The base resume lives in the BASE_RESUME/ folder (.docx preferred).
 
 Output is saved as Markdown under applications/<Company>/, mirroring how cover
@@ -10,6 +10,7 @@ letters are stored.
 """
 
 import os
+import re
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -130,25 +131,86 @@ def _docx_to_text(path: Path) -> str:
                 lines.append(line)
         return "\n".join(lines)
 
-# changes in resume logic
-def load_base_resume() -> str:
-    """Load the base resume text from the BASE_RESUME/ folder.
-
-    Prefers .docx, then .md/.txt. Returns "" if no resume file is found.
-    """
-    if not BASE_RESUME_DIR.exists():
+def _pdf_to_text(path: Path) -> str:
+    """Extract plain text from a .pdf (needs the optional `pypdf` package)."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        print(f"  [resume] pypdf not installed — cannot read {path.name} "
+              f"(pip install pypdf)")
         return ""
-    for pattern in ("*.docx", "*.md", "*.txt"):
-        for path in sorted(BASE_RESUME_DIR.glob(pattern)):
-            if path.name.startswith("~$"):  # skip Word lock files
+    return "\n".join((page.extract_text() or "") for page in PdfReader(str(path)).pages)
+
+
+def _read_resume_file(path: Path) -> str:
+    if path.suffix == ".docx":
+        return _docx_to_text(path)
+    if path.suffix == ".pdf":
+        return _pdf_to_text(path)
+    return path.read_text(encoding="utf-8")
+
+
+# Filename tokens that mark a base resume as belonging to a profile. A file name
+# is split on non-alphanumerics and lowercased, so e.g.
+#   ChiragKathuria_Resume_June26_DE.pdf  -> {"chiragkathuria","resume","june26","de"}
+#   ChiragKathuria_Resume_DataScience.pdf -> contains "datascience"
+#   ChiragKathuria_Resume_AI_Engineer.pdf -> contains "ai"
+PROFILE_RESUME_TOKENS = {
+    "DE": {"de"},
+    "DS": {"ds", "datascience"},
+    "AI": {"ai"},
+}
+_RESUME_SUFFIXES = (".docx", ".md", ".txt", ".pdf")
+
+
+def _resume_files() -> list[Path]:
+    """Candidate base-resume files, preferred formats first."""
+    if not BASE_RESUME_DIR.exists():
+        return []
+    files = []
+    for suffix in _RESUME_SUFFIXES:
+        files += [p for p in sorted(BASE_RESUME_DIR.glob(f"*{suffix}"))
+                  if not p.name.startswith("~$")]  # skip Word lock files
+    return files
+
+
+def load_base_resume(profile: str | None = None) -> str:
+    """Load base resume text from the BASE_RESUME/ folder.
+
+    With `profile` ("DE" / "DS" / "AI"): only a file whose name carries that
+    profile's token (see PROFILE_RESUME_TOKENS) is considered; returns "" if
+    there is none. With no profile: the first readable resume (.docx preferred,
+    then .md/.txt/.pdf), as before. Returns "" if nothing is found.
+    """
+    for path in _resume_files():
+        if profile:
+            tokens = set(re.split(r"[^a-z0-9]+", path.stem.lower()))
+            if not tokens & PROFILE_RESUME_TOKENS.get(profile.upper(), set()):
                 continue
-            if path.suffix == ".docx":
-                text = _docx_to_text(path)
-            else:
-                text = path.read_text(encoding="utf-8")
-            if text.strip():
-                return text
+        text = _read_resume_file(path)
+        if text.strip():
+            return text
     return ""
+
+
+def load_base_resumes(profile_keys) -> dict[str, str]:
+    """Load one base resume per profile key.
+
+    A profile with no dedicated file falls back to the generic first resume
+    (the pre-multi-profile behaviour), so a single-resume setup keeps working.
+    Keys with no resume at all are omitted.
+    """
+    generic = None
+    resumes = {}
+    for key in profile_keys:
+        text = load_base_resume(key)
+        if not text:
+            if generic is None:
+                generic = load_base_resume()
+            text = generic
+        if text:
+            resumes[key] = text
+    return resumes
 
 
 def generate_tailored_resume(base_resume: str, company_name: str, job_title: str,

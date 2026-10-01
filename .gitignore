@@ -13,6 +13,10 @@ secrets.json
 # Your real profile (contains address, phone, visa, salary, etc.).
 # A sanitised template is committed as profile.example.md instead.
 profile.md
+# Per-resume positioning summaries used for multi-profile matching (DE / DS / AI).
+profile_de.md
+profile_ds.md
+profile_ai.md
 
 # Application tracker — full history, recruiter emails, etc.
 tracker.json
@@ -65,3 +69,6 @@ test-results/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Near-threshold calibration log (job titles/companies from your runs)
+near_threshold_log.jsonl

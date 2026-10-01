@@ -70,7 +70,7 @@ def init_db() -> None:
                 applied_status   TEXT DEFAULT 'pending', -- user-owned: pending | applied
                 applied_date     TEXT,                 -- when the pipeline processed it
                 cover_letter_path TEXT,
-                resume_path      TEXT,                 -- tailored resume (Tier A/B, score>=70%)
+                resume_path      TEXT,                 -- tailored resume (score>=70%, any tier)
                 spoc_email       TEXT,                 -- contact email if found in posting
                 notes            TEXT DEFAULT ''        -- user-owned free text
             )
@@ -78,7 +78,8 @@ def init_db() -> None:
         )
         # Migrate databases created before these columns existed.
         existing = {r["name"] for r in conn.execute("PRAGMA table_info(applications)")}
-        for col in ("resume_path", "spoc_email"):
+        for col in ("resume_path", "spoc_email", "first_seen", "best_profile",
+                    "scores", "tier", "source_channel"):
             if col not in existing:
                 conn.execute(f"ALTER TABLE applications ADD COLUMN {col} TEXT")
 
@@ -89,6 +90,21 @@ def _source_key(app: dict) -> str:
     if url:
         return url
     return f"{app.get('company', '')}|{app.get('role_title', '')}".lower()
+
+
+def _new_fields(app: dict) -> tuple:
+    """(first_seen, best_profile, scores_json, tier, source_channel) for a tracker entry.
+
+    Entries written before first_seen existed fall back to applied_date, which
+    the pipeline stamped at the same moment.
+    """
+    return (
+        app.get("first_seen") or app.get("applied_date", ""),
+        app.get("best_profile", ""),
+        json.dumps(app.get("scores") or {}),
+        app.get("tier", ""),
+        app.get("source_channel", ""),
+    )
 
 
 def sync_from_json() -> dict:
@@ -115,8 +131,10 @@ def sync_from_json() -> dict:
                     INSERT INTO applications
                         (source_key, company, role_title, role_url, date_posted,
                          fit_score, pipeline_status, applied_status, applied_date,
-                         cover_letter_path, resume_path, spoc_email, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, '')
+                         cover_letter_path, resume_path, spoc_email, notes,
+                         first_seen, best_profile, scores, tier, source_channel)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, '',
+                            ?, ?, ?, ?, ?)
                     """,
                     (
                         key, app.get("company", ""), app.get("role_title", ""),
@@ -124,6 +142,7 @@ def sync_from_json() -> dict:
                         app.get("fit_score"), app.get("status", ""),
                         app.get("applied_date", ""), app.get("cover_letter_path", ""),
                         app.get("resume_path", ""), app.get("spoc_email", ""),
+                        *_new_fields(app),
                     ),
                 )
                 added += 1
@@ -135,7 +154,9 @@ def sync_from_json() -> dict:
                     UPDATE applications
                        SET company = ?, role_title = ?, role_url = ?, date_posted = ?,
                            fit_score = ?, pipeline_status = ?, applied_date = ?,
-                           cover_letter_path = ?, resume_path = ?, spoc_email = ?
+                           cover_letter_path = ?, resume_path = ?, spoc_email = ?,
+                           first_seen = ?, best_profile = ?, scores = ?, tier = ?,
+                           source_channel = ?
                      WHERE id = ?
                     """,
                     (
@@ -144,6 +165,7 @@ def sync_from_json() -> dict:
                         app.get("fit_score"), app.get("status", ""),
                         app.get("applied_date", ""), app.get("cover_letter_path", ""),
                         app.get("resume_path", ""), app.get("spoc_email", ""),
+                        *_new_fields(app),
                         row["id"],
                     ),
                 )
@@ -158,7 +180,8 @@ def fetch_all() -> list[dict]:
     """Return all applications as a list of dicts."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM applications ORDER BY fit_score DESC, id ASC"
+            # Newest-first by when the pipeline first saw the job; score breaks ties.
+            "SELECT * FROM applications ORDER BY first_seen DESC, fit_score DESC, id ASC"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -289,8 +312,10 @@ PAGE = r"""<!DOCTYPE html>
       <tr>
         <th data-sort="company">Company</th>
         <th data-sort="role_title">Role</th>
+        <th data-sort="first_seen">First seen</th>
         <th data-sort="date_posted">Posted</th>
         <th data-sort="fit_score">Score</th>
+        <th data-sort="best_profile">Profile</th>
         <th data-sort="pipeline_status">Pipeline</th>
         <th data-sort="applied_status">Applied?</th>
         <th>Contact</th>
@@ -306,7 +331,7 @@ PAGE = r"""<!DOCTYPE html>
 
 <script>
 let DATA = [];
-let sortKey = "fit_score", sortDir = -1;
+let sortKey = "first_seen", sortDir = -1;   // newest first; fit_score breaks ties on the server
 
 async function load(){
   const res = await fetch("/api/applications");
@@ -431,10 +456,12 @@ function renderTable(){
       : `<span class="muted">—</span>`;
     const sc = d.fit_score;
     return `<tr>
-      <td class="company">${esc(d.company)}</td>
+      <td class="company">${esc(d.company)}${d.tier==="D"?` <span class="pill" title="Startup board">D${d.source_channel?" · "+esc(d.source_channel):""}</span>`:""}</td>
       <td><div class="role">${esc(d.role_title)}</div></td>
+      <td class="muted">${fmtDate(d.first_seen)}</td>
       <td class="muted">${fmtDate(d.date_posted)}</td>
-      <td class="score ${scoreClass(sc||0)}">${fmtScore(sc)}</td>
+      <td class="score ${scoreClass(sc||0)}" title="${esc(scoresTip(d))}">${fmtScore(sc)}</td>
+      <td>${d.best_profile?`<span class="pill">${esc(d.best_profile)}</span>`:`<span class="muted">—</span>`}</td>
       <td><span class="pill">${esc(d.pipeline_status||"—")}</span></td>
       <td>
         <select class="status ${d.applied_status}" data-id="${d.id}" onchange="onStatus(this)">
@@ -451,6 +478,11 @@ function renderTable(){
   }).join("");
 }
 
+function scoresTip(d){
+  try{ const s = JSON.parse(d.scores||"{}");
+       return Object.entries(s).map(([k,v])=>k+": "+Math.round(v*100)+"%").join("  ");
+  }catch(e){ return ""; }
+}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function fileLink(path,label){return path?`<a class="link" href="/file?path=${encodeURIComponent(path)}" target="_blank" rel="noopener">${label}</a>`:"";}
 
@@ -470,7 +502,7 @@ function onNotes(el){ save(parseInt(el.dataset.id), "notes", el.value); }
 document.querySelectorAll("th[data-sort]").forEach(th=>{
   th.addEventListener("click",()=>{
     const k=th.dataset.sort;
-    if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir = (k==="fit_score")?-1:1;}
+    if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir = (k==="fit_score"||k==="first_seen")?-1:1;}
     renderTable();
   });
 });

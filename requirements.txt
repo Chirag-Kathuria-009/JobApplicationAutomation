@@ -6,3 +6,5 @@ rich>=13.7.0
 python-dotenv>=1.0.0
 # Optional: enables richer .docx resume parsing (a stdlib fallback is used if absent)
 python-docx>=1.1.0
+# Optional: lets resume.py read .pdf base resumes
+pypdf>=4.0.0

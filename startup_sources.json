@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "tier": "D",
+    "description": "Tier D (startups) is sourced from job boards, not a fixed company list. Each source is re-scraped every run. Boards are checked for reachability on 2026-10-01; sources that cannot be scraped without a login / anti-bot bypass are kept here as enabled:false so the reason is recorded rather than silently dropped.",
+    "types": {
+      "rss_jsonld": "RSS feed(s) list posting URLs; each posting page carries schema.org JobPosting JSON-LD (description, date, location, direct ATS url)."
+    }
+  },
+  "sources": [
+    {
+      "channel": "startupjobs",
+      "name": "Startupjobs.de",
+      "type": "rss_jsonld",
+      "enabled": true,
+      "feeds": [
+        "https://startupjobs.de/jobs.rss",
+        "https://startupjobs.de/jobs.rss?skills=python"
+      ],
+      "max_details_per_feed": 40,
+      "notes": "Verified working. Feed = 100 newest DeepTech-startup jobs; ?skills=<tag> gives filtered feeds - add more feed URLs here to widen coverage."
+    },
+    {
+      "channel": "wellfound",
+      "name": "Wellfound (AngelList) - Germany",
+      "type": "unsupported",
+      "enabled": false,
+      "url": "https://wellfound.com/location/germany",
+      "notes": "HTTP 403 to non-browser clients (bot protection). Needs a logged-in browser session / paid API; not attempted."
+    },
+    {
+      "channel": "honeypot",
+      "name": "honeypot.io",
+      "type": "unsupported",
+      "enabled": false,
+      "url": "https://www.honeypot.io/",
+      "notes": "Connection failed from the dev machine, and the job board is candidate-login gated. Revisit with a logged-in session."
+    },
+    {
+      "channel": "eu-startups",
+      "name": "EU-Startups Jobs",
+      "type": "unsupported",
+      "enabled": false,
+      "url": "https://www.eu-startups.com/jobs/",
+      "notes": "HTTP 403 to non-browser clients. Needs Playwright with a real browser profile; not attempted."
+    },
+    {
+      "channel": "otta",
+      "name": "Otta (now Welcome to the Jungle)",
+      "type": "unsupported",
+      "enabled": false,
+      "url": "https://otta.com/",
+      "notes": "otta.com now redirects to Welcome to the Jungle, whose job search requires login. No public feed found."
+    },
+    {
+      "channel": "tech.eu",
+      "name": "tech.eu jobs",
+      "type": "unsupported",
+      "enabled": false,
+      "url": "https://jobs.tech.eu/",
+      "notes": "jobs.tech.eu redirects to the tech.eu homepage from a plain HTTP client; the board's data endpoint was not identified. Needs investigation in a browser."
+    }
+  ]
+}

@@ -40,10 +40,16 @@ dashboard.
 - **Filters** jobs by role keywords, target location (Germany + bordering EU
   countries + remote), posting age, and English-language requirement — before
   spending any API tokens.
-- **Scores** every new job 0.0–1.0 against your `profile.md` using Claude, with a
-  short reasoning string and skill match/gap analysis.
+- **Scores** every new job 0.0–1.0 against three resume-variant profiles
+  (`profile_de.md` Data Engineer, `profile_ds.md` Data Science, `profile_ai.md`
+  AI Engineer) in a single Claude call, keeps all three scores and the best one
+  (`best_profile`), which also decides which base resume gets tailored.
+- **Tier D (startups)** is sourced from job boards listed in
+  `startup_sources.json` rather than a fixed company list. Only Startupjobs.de is
+  currently scrapable; the other boards are recorded there as disabled with the
+  reason (bot protection / login wall).
 - **Generates** a tailored **cover letter** for any match above the threshold, and
-  a tailored **one-page resume** for strong Tier A/B matches (score ≥ 70%).
+  a tailored **one-page resume** for strong matches in any tier (score ≥ 70%).
 - **Tracks** every job processed in `tracker.json` (and a SQLite mirror,
   `tracker.db`) so it never re-scores or re-bills a job it has already seen.
 - **Visualises** everything in a zero-dependency local web **dashboard** with
@@ -73,7 +79,7 @@ dashboard.
                 ▼                 ▼                          ▼
         matcher.py         cover_letter.py              resume.py
       score 0.0–1.0      tailored cover letter      tailored 1-page resume
-      vs profile.md      (Claude, per role)         (Tier A/B & score ≥ 0.70)
+      vs profile.md      (Claude, per role)         (score ≥ 0.70, any tier)
                 │                 │                          │
                 └─────────────────┼──────────────────────────┘
                                   ▼
@@ -105,6 +111,9 @@ claude_implementation/
 ├── companies.json         # Your target companies + ATS handles + fit tiers
 ├── profile.md             # YOUR profile (git-ignored — PII)        ← you create
 ├── profile.example.md     # Sanitised template for profile.md
+├── profile_{de,ds,ai}.md  # Per-resume positioning summaries (git-ignored) ← you create
+├── profile_*.example.md   # Templates for the three summaries
+├── startup_sources.json   # Tier D job-board sources (re-scraped every run)
 ├── requirements.txt       # Python dependencies
 ├── .env                   # ANTHROPIC_API_KEY (git-ignored)          ← you create
 ├── .env.example           # Template for .env
@@ -162,7 +171,9 @@ cp profile.example.md profile.md
 | `.env` | Your `ANTHROPIC_API_KEY`. |
 | `profile.md` | Your CV-in-markdown: skills, experience, projects, salary, work authorisation, standard form answers. Read on **every** run and injected into scoring/cover-letter/resume prompts. |
 | `companies.json` | The list of target companies. Each entry has a `name`, `category`, `careers_url`, `ats` (which scraper to use), an `ats_handle`/board token, a `fit_tier` (A/B/C), and optional `"skip": true` to disable a broken portal. |
-| `BASE_RESUME/` | Your base CV file used as the source for tailored resumes. |
+| `profile_de.md` / `profile_ds.md` / `profile_ai.md` | Short positioning summary per resume variant; every job is scored against all three. Missing files are skipped; if none exist, `profile.md` is used as a single profile. |
+| `startup_sources.json` | Tier D startup job boards (feeds, enabled flag, notes on why a board is disabled). |
+| `BASE_RESUME/` | One base CV per variant (`.docx/.md/.txt/.pdf`; `.pdf` needs `pip install pypdf`). A file is matched to a profile by a token in its name: `DE` → `..._DE.*`, `DS` → `..._DS.*` or `..._DataScience.*`, `AI` → `..._AI_Engineer.*`. A profile with no matching file falls back to the first resume found. |
 
 Scraper behaviour (role keywords, target locations, max posting age, exclude
 keywords) is configured at the top of [`scraper.py`](scraper.py).
@@ -184,6 +195,10 @@ python run_pipeline.py --tier A
 # Test a single company (runs even if marked "skip")
 python run_pipeline.py --company "Snowflake"
 
+# Only Tier D startup boards, or one board
+python run_pipeline.py --tier D
+python run_pipeline.py --source startupjobs
+
 # Raise the match threshold (only process 70%+ fits)
 python run_pipeline.py --min-score 0.7
 ```
@@ -191,9 +206,15 @@ python run_pipeline.py --min-score 0.7
 | Flag | Effect |
 |------|--------|
 | `--dry-run` | Scrape + score only; skip cover-letter & resume generation. |
-| `--tier A\|B\|C` | Restrict to one fit tier. |
+| `--tier A\|B\|C\|D` | Restrict to one fit tier (`D` = startup boards). |
+| `--source NAME` | Run one Tier D board channel (e.g. `startupjobs`). |
 | `--company NAME` | Run a single company by (partial) name; honoured even if `skip`. |
-| `--min-score 0.5` | Minimum fit score to generate artefacts (default `0.5`). |
+| `--min-score 0.6` | Minimum **best-profile** fit score to generate artefacts (default `0.6`). Jobs scoring 0.50–0.65 are also appended to `near_threshold_log.jsonl` so you can spot-check the cutoff — it is a starting point, not a calibrated value. |
+
+**Freshness:** "new to me" comes from `tracker.json` de-duplication, not an age
+cutoff. Each tracker entry gets a `first_seen` timestamp and the dashboard sorts
+newest-first on it. The only age filter left is the loose `MAX_AGE_DAYS` (7)
+safety net in `scraper.py`; the run summary prints how many postings it dropped.
 
 Generated cover letters and resumes land in `applications/<Company>/`, and every
 processed job is appended to `tracker.json`.

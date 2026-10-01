@@ -7,10 +7,13 @@ Handles Greenhouse, Workday, Lever, and Proprietary portals via Playwright.
 Returns a list of dicts: [{title, description, url, location, date_posted, ats}]
 """
 
+import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import urljoin, quote
+from xml.etree import ElementTree as ET
 import httpx
 from bs4 import BeautifulSoup
 
@@ -163,17 +166,30 @@ def requires_english(description: str) -> bool:
     return any(token in desc_lower for token in ENGLISH_LANGUAGE_TOKENS)
 
 
+STALE_SKIPPED = 0  # postings dropped by the MAX_AGE_DAYS safety net this run (logged, not silent)
+
+
 def is_posted_within_days(date_str: str, days: int = MAX_AGE_DAYS) -> bool:
-    """Return True if job was posted within `days` days. Passes through if date is unknown."""
+    """Return True if job was posted within `days` days. Passes through if date is unknown.
+
+    This is only a loose safety net (MAX_AGE_DAYS), NOT the freshness mechanism:
+    "new to me" comes from tracker.json de-dup, and newest-first ordering from
+    `first_seen`. Anything dropped here is counted in STALE_SKIPPED so
+    run_pipeline can report it.
+    """
+    global STALE_SKIPPED
     if not date_str:
         return True
     try:
         posted = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         if posted.tzinfo is None:
             posted = posted.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - posted <= timedelta(days=days)
+        fresh = datetime.now(timezone.utc) - posted <= timedelta(days=days)
     except (ValueError, TypeError):
         return True
+    if not fresh:
+        STALE_SKIPPED += 1
+    return fresh
 
 
 def is_relevant_role(title: str) -> bool:
@@ -997,6 +1013,130 @@ def scrape_amazon(company: dict) -> list[dict]:
             except Exception as e:
                 print(f"  [Amazon] Error ({country}/{term}): {e}")
             time.sleep(0.3)
+
+    return jobs
+
+
+# --------------------------------------------------------------------------- #
+# Tier D — startup job boards
+# --------------------------------------------------------------------------- #
+STARTUP_SOURCES_PATH = Path(__file__).parent / "startup_sources.json"
+
+
+def load_startup_sources(channel_filter: str | None = None) -> list[dict]:
+    """Enabled startup-board sources from startup_sources.json (Tier D).
+
+    `channel_filter` restricts to one source by channel (case-insensitive substring).
+    """
+    if not STARTUP_SOURCES_PATH.exists():
+        return []
+    data = json.loads(STARTUP_SOURCES_PATH.read_text(encoding="utf-8"))
+    sources = [s for s in data.get("sources", []) if s.get("enabled")]
+    if channel_filter:
+        sources = [s for s in sources if channel_filter.lower() in s["channel"].lower()]
+    return sources
+
+
+def _find_jobposting_jsonld(html: str) -> dict | None:
+    """Return the schema.org JobPosting object embedded in a posting page, if any."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        candidates = data if isinstance(data, list) else data.get("@graph", [data])
+        for obj in candidates:
+            if isinstance(obj, dict) and obj.get("@type") == "JobPosting":
+                return obj
+    return None
+
+
+def scrape_startup_source(source: dict) -> list[dict]:
+    """
+    Scrape one Tier D job board. Returns jobs in the same shape as the ATS
+    scrapers, plus `company` (the hiring startup), `source_channel`, `board_url`.
+
+    The board is only used to *discover* postings: where the posting's JSON-LD
+    exposes a direct ATS link (Greenhouse / Lever / Ashby / ...), that becomes
+    the job `url`, so it dedupes against the same job found via Tiers A-C.
+    The same filters as the company scrapers are applied: role keywords,
+    target location, English-language requirement. Posting age is NOT applied
+    as a hard filter here beyond the shared MAX_AGE_DAYS safety net.
+    """
+    if source.get("type") != "rss_jsonld":
+        print(f"  [{source['channel']}] unsupported source type {source.get('type')!r}")
+        return []
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    jobs: list[dict] = []
+    seen_links: set[str] = set()
+
+    for feed_url in source.get("feeds", []):
+        try:
+            resp = httpx.get(feed_url, timeout=20, follow_redirects=True, headers=headers)
+            if resp.status_code != 200:
+                print(f"  [{source['channel']}] feed HTTP {resp.status_code}: {feed_url}")
+                continue
+            items = ET.fromstring(resp.content).findall("./channel/item")
+        except Exception as e:
+            print(f"  [{source['channel']}] feed error {feed_url}: {e}")
+            continue
+
+        details_left = source.get("max_details_per_feed", 40)
+        for item in items:
+            link = (item.findtext("link") or "").strip()
+            raw_title = (item.findtext("title") or "").strip()
+            # RSS title is "Role – Company (City)"; judge relevance on the role part.
+            role_part = raw_title.rsplit(" – ", 1)[0]
+            if not link or link in seen_links or not is_relevant_role(role_part):
+                continue
+            seen_links.add(link)
+            if details_left <= 0:
+                continue
+            details_left -= 1
+
+            try:
+                dresp = httpx.get(link, timeout=20, follow_redirects=True, headers=headers)
+                posting = _find_jobposting_jsonld(dresp.text) if dresp.status_code == 200 else None
+            except Exception:
+                posting = None
+            time.sleep(0.5)  # polite delay between detail fetches
+            if not posting:
+                continue
+
+            addr = (posting.get("jobLocation") or {}).get("address") or {}
+            parts = [addr.get("addressLocality", ""), addr.get("addressCountry", "")]
+            location = ", ".join(p for p in parts if p)
+            if posting.get("jobLocationType") == "TELECOMMUTE":
+                location = (location + " Remote").strip()
+            if not _in_target_location(location):
+                continue
+
+            date_posted = posting.get("datePosted", "") or ""
+            if not is_posted_within_days(date_posted):
+                continue
+
+            description = BeautifulSoup(
+                posting.get("description", "") or "", "html.parser"
+            ).get_text(separator=" ").strip()
+            if not requires_english(description):
+                continue
+
+            org = posting.get("hiringOrganization") or {}
+            title = (posting.get("title") or role_part).strip()
+            jobs.append({
+                "title": title,
+                "description": description[:3000],
+                "url": posting.get("url") or link,
+                "board_url": link,
+                "location": location,
+                "date_posted": date_posted,
+                "spoc_email": extract_spoc_email(description),
+                "ats": "StartupBoard",
+                "company": (org.get("name") or "").strip() or "Unknown startup",
+                "source_channel": source["channel"],
+            })
 
     return jobs
 
