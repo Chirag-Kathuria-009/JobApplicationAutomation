@@ -140,7 +140,7 @@ def log_application(tracker: dict, company: str, role_title: str, role_url: str,
                      fit_score: float, status: str, cover_letter_path: str = None,
                      date_posted: str = "", spoc_email: str = "", resume_path: str = None,
                      tier: str = "", source_channel: str = "",
-                     scores: dict = None, best_profile: str = ""):
+                     scores: dict = None, best_profile: str = "", resume_error: str = ""):
     """Log a new job to the tracker.
 
     `first_seen` is stamped here, once, when the job is first written. The
@@ -164,7 +164,8 @@ def log_application(tracker: dict, company: str, role_title: str, role_url: str,
         "first_seen": now,
         "applied_date": now,
         "cover_letter_path": cover_letter_path,
-        "resume_path": resume_path,
+        "resume_path": resume_path,       # tailored one-page PDF
+        "resume_error": resume_error,     # non-empty = tailoring failed (resume_failed)
         "notes": ""
     })
     save_tracker(tracker)
@@ -217,7 +218,7 @@ def main():
     from scraper import scrape_company, scrape_startup_source, load_startup_sources
     from matcher import score_job_multi
     from cover_letter import generate_cover_letter
-    from resume import generate_tailored_resume, load_base_resumes
+    from resume import generate_tailored_resume, load_base
 
     profiles, full_profile = load_profiles()
     console.print(f"[dim]Profiles scored per job: {', '.join(profiles)}[/dim]")
@@ -230,15 +231,10 @@ def main():
     tracker = load_tracker()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # One base resume per profile (DE / DS / AI), tailored for strong (>= 70%) matches in any tier.
-    base_resumes = load_base_resumes(profiles)
-    if not base_resumes:
-        console.print("[yellow]No base resume found in BASE_RESUME/ — resume tailoring disabled.[/yellow]")
-    else:
-        missing = [k for k in profiles if k not in base_resumes]
-        if missing:
-            console.print(f"[yellow]No base resume for profile(s) {', '.join(missing)} — "
-                          f"tailoring disabled for jobs that match them best.[/yellow]")
+    # Structured base resume (BASE_RESUME/base.json); tailored PDFs for strong (>= 70%) matches in any tier.
+    base_resume = load_base()
+    if base_resume is None:
+        console.print("[yellow]No BASE_RESUME/base.json found — resume tailoring disabled.[/yellow]")
 
     results = []
     stats = {"scraped": 0, "matched": 0, "applied": 0}
@@ -320,31 +316,33 @@ def main():
             cl_path = None
 
         # Step 3b: Tailor the best-profile base resume for strong matches (score >= 70%, any tier)
-        resume_path = None
+        # The model only picks/orders pre-written bullets from BASE_RESUME/base.json;
+        # the result is rendered to a one-page PDF. On failure the job keeps its
+        # cover letter and records resume_error instead of being dropped.
+        resume_path, resume_error = None, ""
         if score >= RESUME_MIN_SCORE:
-            if best not in base_resumes:
-                console.print(f"    [yellow]No base resume for profile {best} — skipping tailoring[/yellow]")
+            if base_resume is None:
+                console.print("    [yellow]No BASE_RESUME/base.json — skipping resume tailoring[/yellow]")
             else:
                 try:
-                    resume_text = generate_tailored_resume(
-                        base_resumes[best], company_name, job["title"], job["description"])
-                    company_dir.mkdir(parents=True, exist_ok=True)
-                    rz_path = company_dir / f"resume_{safe_title}.md"
-                    with open(rz_path, "w", encoding="utf-8") as f:
-                        f.write(resume_text)
-                    resume_path = str(rz_path)
-                    console.print(f"    [green]Tailored resume ({best} base) saved: {rz_path.name}[/green]")
+                    out = generate_tailored_resume(
+                        base_resume, best, company_name, job["title"], job["description"], company_dir)
+                    resume_path = out["pdf_path"]
+                    console.print(f"    [green]Tailored resume PDF ({best} profile): {Path(resume_path).name}[/green]")
                 except Exception as e:
-                    console.print(f"    [red]Resume tailoring failed: {e}[/red]")
+                    resume_error = str(e)
+                    console.print(f"    [red]Resume tailoring failed (resume_failed): {e}[/red]")
 
-        # Step 4: Log result
+        # Step 4: Log result. A generated resume means the entry awaits manual review —
+        # nothing is ever sent automatically.
+        status = "pending_review" if resume_path else "cover_letter_ready"
         log_application(tracker, company_name, job["title"], url,
-                        score, "cover_letter_ready", str(cl_path) if cl_path else None,
+                        score, status, str(cl_path) if cl_path else None,
                         date_posted=job.get("date_posted", ""),
                         spoc_email=job.get("spoc_email", ""),
-                        resume_path=resume_path, **meta)
+                        resume_path=resume_path, resume_error=resume_error, **meta)
         stats["applied"] += 1
-        results.append({**result, "status": "cover_letter_ready"})
+        results.append({**result, "status": status})
         console.print(f"    [cyan]Logged to tracker ✓[/cyan]")
 
     # --- Tiers A-C: fixed company list ---

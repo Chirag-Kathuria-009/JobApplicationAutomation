@@ -49,7 +49,7 @@ dashboard.
   currently scrapable; the other boards are recorded there as disabled with the
   reason (bot protection / login wall).
 - **Generates** a tailored **cover letter** for any match above the threshold, and
-  a tailored **one-page resume** for strong matches in any tier (score ≥ 70%).
+  a tailored **one-page resume** for strong matches in any tier (score ≥ 70%), rendered as a one-page PDF.
 - **Tracks** every job processed in `tracker.json` (and a SQLite mirror,
   `tracker.db`) so it never re-scores or re-bills a job it has already seen.
 - **Visualises** everything in a zero-dependency local web **dashboard** with
@@ -119,7 +119,8 @@ claude_implementation/
 ├── .env.example           # Template for .env
 ├── SETUP_GUIDE.md         # Step-by-step Windows setup walkthrough
 │
-├── BASE_RESUME/           # Drop your base CV here (.docx/.md/.txt)  (git-ignored)
+├── BASE_RESUME/base.json  # Structured base resume (bullet ids)           (git-ignored)
+├── resume_render.py       # Fixed-layout one-page PDF renderer (Playwright/Chromium)
 ├── applications/          # Generated cover letters & resumes        (git-ignored)
 │   └── <Company>/cover_letter_<Role>.md
 ├── tracker.json           # Application history / status             (git-ignored)
@@ -173,7 +174,7 @@ cp profile.example.md profile.md
 | `companies.json` | The list of target companies. Each entry has a `name`, `category`, `careers_url`, `ats` (which scraper to use), an `ats_handle`/board token, a `fit_tier` (A/B/C), and optional `"skip": true` to disable a broken portal. |
 | `profile_de.md` / `profile_ds.md` / `profile_ai.md` | Short positioning summary per resume variant; every job is scored against all three. Missing files are skipped; if none exist, `profile.md` is used as a single profile. |
 | `startup_sources.json` | Tier D startup job boards (feeds, enabled flag, notes on why a board is disabled). |
-| `BASE_RESUME/` | One base CV per variant (`.docx/.md/.txt/.pdf`; `.pdf` needs `pip install pypdf`). A file is matched to a profile by a token in its name: `DE` → `..._DE.*`, `DS` → `..._DS.*` or `..._DataScience.*`, `AI` → `..._AI_Engineer.*`. A profile with no matching file falls back to the first resume found. |
+| `BASE_RESUME/base.json` | Your resume as structured JSON (git-ignored): every bullet has an id, plus summaries, projects, skill groups and per-profile hints. **Review it by hand once** — it is the only source of resume text. Add a tool to `skills`/`extra_allowed_terms` only if you can back it with experience. |
 
 Scraper behaviour (role keywords, target locations, max posting age, exclude
 keywords) is configured at the top of [`scraper.py`](scraper.py).
@@ -218,6 +219,14 @@ safety net in `scraper.py`; the run summary prints how many postings it dropped.
 
 Generated cover letters and resumes land in `applications/<Company>/`, and every
 processed job is appended to `tracker.json`.
+
+**Tailored resume PDFs.** The model never writes resume text: it only picks and
+orders the pre-written bullets in `base.json`, which code validates (unknown ids
+or terms are rejected, one retry) and renders to a fixed one-page layout. Each
+PDF has a `.choices.json` beside it recording the selection. Jobs with a PDF get
+status `pending_review`; if tailoring fails the job keeps its cover letter and
+`resume_error` is set. One-time setup: `playwright install chromium`. Test on
+saved job descriptions: `python resume.py --test jd1.txt jd2.txt --profile DE`.
 
 ---
 

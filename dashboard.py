@@ -553,7 +553,11 @@ class Handler(BaseHTTPRequestHandler):
             body = target.read_bytes()
         except (OSError, ValueError):
             return self._json(404, {"error": "not found"})
-        self._send(200, body, "text/markdown; charset=utf-8")
+        if target.suffix.lower() == ".pdf":
+            # Tailored resumes are PDFs — show inline in the browser's viewer.
+            return self._send(200, body, "application/pdf")
+        ctype = "application/json" if target.suffix.lower() == ".json" else "text/markdown; charset=utf-8"
+        self._send(200, body, ctype)
 
     def do_GET(self):
         path = urlparse(self.path).path
