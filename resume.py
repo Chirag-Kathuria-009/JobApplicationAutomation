@@ -3,91 +3,109 @@ job_pipeline/resume.py
 ======================
 Generates a job-tailored one-page resume PDF.
 
-The model does NOT write resume text. It only chooses from the owner's
-pre-written content in BASE_RESUME/base.json (every bullet has an id):
-  - which pre-written summary to use,
-  - which bullets to show per role / project, and in what order,
-  - which projects to include,
-  - the order of the skill groups,
-  - which terms to bold.
-Code validates every choice against the base file (unknown ids or terms are
-rejected, with one retry), assembles the resume from the base text unchanged,
-and resume_render.py lays it out as a fixed-format PDF. So nothing in the PDF
-can be invented by the model, and the layout is identical for every job.
+The model rewrites the owner's resume for the job (summary, skills order,
+STAR-style bullets, choice of 3 projects) and returns it as JSON in the shape of
+BASE_RESUME/base.json. Fixed facts (name, contact, role titles, companies,
+dates, project titles/tech, education) are taken from base.json by code and
+cannot be changed by the model. Rewritten text is then checked in code:
+  - every number must already appear in the original entry (no invented metrics),
+  - no technology from tech_vocabulary.json may appear unless it is already in
+    the base resume (no invented tools),
+  - skills the base resume cannot back up are removed,
+  - all roles are present, exactly 3 projects (or all if fewer), length limits.
+Invalid output is retried once with the reasons, then the job is marked
+resume_failed. resume_render.py lays the result out as a fixed-format PDF, and
+an audit file (original vs rewritten bullets) is saved beside it.
 
 Only invoked for strong matches (see run_pipeline.py): best-profile score >= 70%.
 
-Manual test on saved job descriptions (needs ANTHROPIC_API_KEY):
+The model is reached through llm.call_model (Claude Code CLI on the owner's
+subscription - no API key).
+
+Manual test on saved job descriptions (needs the Claude Code CLI logged in):
     python resume.py --test jd1.txt jd2.txt --profile DE --company Acme
 """
 
 import argparse
 import json
-import os
 import re
 from pathlib import Path
 
-import anthropic
-from dotenv import load_dotenv
-
-load_dotenv()
+import llm
+from jd_cleaner import clean_job_description
 
 BASE_DIR = Path(__file__).parent
 BASE_RESUME_DIR = BASE_DIR / "BASE_RESUME"
 BASE_JSON_PATH = BASE_RESUME_DIR / "base.json"
+TECH_VOCAB_PATH = BASE_DIR / "tech_vocabulary.json"
 
-MODEL = "claude-sonnet-4-6"
+PROJECTS_SHOWN = 3
 MAX_BOLD_TERMS = 15
+MAX_BULLET_WORDS = 50
+MAX_SUMMARY_WORDS = 85
+JD_CHARS_FOR_RESUME = 4000
 
 
 class ResumeError(Exception):
-    """Tailoring failed (bad model output after a retry, or render failure)."""
+    """Tailoring failed (invalid model output after a retry, or render failure)."""
 
 
-_client = None
+RESUME_SYSTEM_PROMPT = """You are an expert resume editor specializing in Data Engineering / Data Science / AI Engineering roles.
 
+I will provide:
+1. My base resume (as JSON)
+2. A job description (responsibilities, requirements and company context only)
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    return _client
-
-
-RESUME_SYSTEM_PROMPT = """You are an expert resume editor for Data Engineering / Data Science / AI Engineering roles.
-
-You are given the candidate's resume content as JSON (every bullet has an id) and a job description. You do NOT write resume text. You only CHOOSE and ORDER existing content, so the resume is tailored to the job.
+Your task is to tailor my resume specifically for this job while following STRICT constraints:
 
 -----------------------
 HARD CONSTRAINTS
 -----------------------
-- Use ONLY ids that appear in the provided JSON. Never invent, edit or merge bullets.
-- Every role in "experience" must appear (do not remove roles); choose and order its bullets.
-- The final resume must fit ONE page: choose 1-3 projects, and at most 4 bullets for the main role, 2-3 for the others, 1-3 per project.
-- Order bullets and projects MOST RELEVANT FIRST. The last bullet of each list is dropped first if space runs out.
-- No fake experience. Maintain realistic, explainable claims.
+- Keep the overall structure EXACTLY the same (Summary, Skills, Experience, Projects, Education).
+- Do NOT add new sections. Do NOT remove any experience role.
+- Show exactly 3 projects (the most relevant to the job, most relevant first), as my individual resumes do.
+- Resume must remain within ONE PAGE: keep text concise, at most 4 bullets for the most recent role, 2-3 for others, 2-3 per project.
+- Avoid fluff or generic statements.
+- No fake experience - only reframe and optimize existing content.
+- NEVER invent a number, metric, tool, technology, employer, certification or business impact. Every number in a bullet must already appear in that entry's original bullets. Do NOT mention any technology that is not already in my base resume, even if the job description asks for it (a skill I lack must simply be left out).
+- Maintain realistic, explainable claims I can justify in an interview.
 
 -----------------------
-WHAT TO CHOOSE
+OBJECTIVE
 -----------------------
-1. summary_id: the pre-written summary that best fits the job.
-2. experience: for every role id, the ordered bullet ids to show.
-3. projects: ordered project ids most relevant to the job; project_bullets: ordered bullet ids per chosen project.
-4. skills_order: ordered skill-group ids, most relevant to the job first. Leave out groups that are irrelevant (keep at least 4). The "languages" group is always appended automatically.
-5. bold_terms: up to 15 skills/tools that appear in the job description AND in allowed_terms, for ATS keyword emphasis. Use them exactly as written in allowed_terms.
+Maximize alignment with the job description, improve ATS keyword matching, highlight the most relevant skills and experience, and make everything easy to justify in interviews.
+
+-----------------------
+WHAT TO MODIFY
+-----------------------
+1. SUMMARY
+- Rewrite to align with the job role; 3-4 lines (max ~70 words); impact + specialization.
+- Include key tools/skills from the JD ONLY if they are already in my base resume. No keyword stuffing.
+
+2. SKILLS
+- Reorder groups and items by relevance to the JD; group logically; remove less relevant items.
+- Add a skill ONLY if it is already mentioned in my base resume (bullets, projects or skills).
+- Do NOT include a "Languages" group (it is added automatically).
+
+3. EXPERIENCE AND PROJECTS - STAR-STYLE BULLETS
+- Rewrite every bullet as ONE short sentence (max ~30 words) in STAR form: the problem/situation, the steps I took (with the tools), and the outcome/achievement. For example: "<problem or goal>; <what I did, with tools>, <result with its metric>."
+- Use only facts already in the original bullet. If the original states no problem, or no measurable outcome, leave that part out rather than inventing it.
+- Put the most relevant bullets first. Use the JD's terminology where it truthfully describes what I did.
+
+4. KEYWORD ALIGNMENT
+- Naturally include JD keywords that I genuinely have; avoid unnatural stuffing.
 
 -----------------------
 OUTPUT FORMAT
 -----------------------
-Respond ONLY with valid JSON, no markdown, no commentary:
+Respond ONLY with valid JSON (no markdown, no explanation, no comments):
 {
-  "summary_id": "de",
-  "experience": {"exp_bajaj": ["b_etl", "b_dbx"], "exp_werkstudent": ["w_pbi"]},
-  "projects": ["proj_dora", "proj_agent"],
-  "project_bullets": {"proj_dora": ["d_stream"], "proj_agent": ["a_guard"]},
-  "skills_order": ["de", "prog"],
-  "bold_terms": ["Airflow", "Python"]
-}"""
+  "summary": "...",
+  "skills": [{"label": "Programming", "items": ["Python", "SQL"]}],
+  "experience": {"<role id>": ["bullet 1", "bullet 2"]},
+  "projects": [{"id": "<project id>", "bullets": ["bullet 1", "bullet 2"]}]
+}
+"experience" must contain every role id from the base resume. "projects" must contain exactly 3 project ids from the base resume."""
 
 
 # --------------------------------------------------------------------------- #
@@ -136,9 +154,7 @@ def _expand_term(term: str) -> set[str]:
 
 
 def allowed_terms(base: dict) -> set[str]:
-    """Terms the resume may emphasise: skill items + project tech + extras (lowercased).
-    Derived from the base file so it can't drift. Snowflake etc. are absent
-    unless the owner adds them to base.json."""
+    """Skill items + project tech + extras, lowercased (derived from base.json so it can't drift)."""
     terms: set[str] = set()
     for group in base["skills"]:
         if group.get("bold_exempt"):
@@ -154,117 +170,213 @@ def allowed_terms(base: dict) -> set[str]:
     return terms
 
 
+def _all_base_text(base: dict) -> str:
+    """Everything the owner has written (lowercased) - the universe of claims the model may reuse."""
+    parts = list(base["summaries"].values())
+    for sec in ("experience", "projects"):
+        for e in base[sec]:
+            parts += [b["text"] for b in e["bullets"]] + [e.get("tech", "")]
+    for s in base["skills"]:
+        parts += s["items"]
+    parts += base.get("extra_allowed_terms", [])
+    return "\n".join(parts).lower()
+
+
 # --------------------------------------------------------------------------- #
-# Validation + assembly (enforced in code, not only in the prompt)
+# Checks on the model's rewrite (enforced in code, not only in the prompt)
 # --------------------------------------------------------------------------- #
-def validate_choices(base: dict, choices) -> list[str]:
-    """Return a list of problems with the model's choices ([] if valid)."""
-    if not isinstance(choices, dict):
-        return ["response is not a JSON object"]
+_NUM = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    return {n.replace(",", ".") for n in _NUM.findall(text)}
+
+
+def _load_vocab() -> list[str]:
+    if TECH_VOCAB_PATH.exists():
+        return json.loads(TECH_VOCAB_PATH.read_text(encoding="utf-8"))
+    return []
+
+
+def _mentions(term: str, text: str) -> bool:
+    """Whole-word, case-insensitive occurrence of `term` in `text`."""
+    return re.search(rf"(?<![\w+#.]){re.escape(term)}(?![\w+#])", text, flags=re.I) is not None
+
+
+def unowned_tools(text: str, base_text: str, owned: set[str], vocab: list[str]) -> list[str]:
+    """Technologies named in `text` (from tech_vocabulary.json) that the base resume does not contain."""
+    return [t for t in vocab
+            if _mentions(t, text) and t.lower() not in owned and not _mentions(t, base_text)]
+
+
+def _skill_item_ok(item: str, base_text: str, owned: set[str], vocab: list[str]) -> bool:
+    """A skill may stay only if the base resume already backs it up and it is not a known foreign tool."""
+    if unowned_tools(item, base_text, owned, vocab):
+        return False
+    return bool(_expand_term(item) & owned) or any(v in base_text for v in _expand_term(item))
+
+
+def validate_tailored(base: dict, out) -> tuple[list[str], dict, list[str]]:
+    """Check the model's JSON. Returns (errors, cleaned_output, removed_skills).
+
+    Skills the base can't back up are removed (not an error). Anything else
+    wrong - missing roles, wrong project count, invented numbers or tools,
+    over-long text - is an error and triggers the retry.
+    """
+    if not isinstance(out, dict):
+        return ["response is not a JSON object"], {}, []
     errs: list[str] = []
+    base_text = _all_base_text(base)
+    owned = allowed_terms(base)
+    vocab = _load_vocab()
+    all_numbers = _numbers(base_text)
 
-    if choices.get("summary_id") not in base["summaries"]:
-        errs.append(f"summary_id must be one of {sorted(base['summaries'])}")
-
-    exp_by_id = {e["id"]: e for e in base["experience"]}
-    chosen_exp = choices.get("experience")
-    if not isinstance(chosen_exp, dict):
-        errs.append("experience must be an object {role_id: [bullet_ids]}")
+    # summary
+    summary = out.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        errs.append("summary missing")
+        summary = ""
     else:
-        for rid in exp_by_id:
-            if rid not in chosen_exp:
-                errs.append(f"experience is missing role '{rid}' (roles may not be removed)")
-        for rid, bids in chosen_exp.items():
-            if rid not in exp_by_id:
-                errs.append(f"unknown role id '{rid}'")
+        if len(summary.split()) > MAX_SUMMARY_WORDS:
+            errs.append(f"summary is over {MAX_SUMMARY_WORDS} words")
+        extra = _numbers(summary) - all_numbers
+        if extra:
+            errs.append(f"summary contains numbers not in the base resume: {sorted(extra)}")
+        tools = unowned_tools(summary, base_text, owned, vocab)
+        if tools:
+            errs.append(f"summary mentions technologies not in the base resume: {tools}")
+
+    # experience
+    exp_out = out.get("experience")
+    exp_clean: dict[str, list[str]] = {}
+    if not isinstance(exp_out, dict):
+        errs.append('"experience" must be an object {role id: [bullets]}')
+    else:
+        for e in base["experience"]:
+            bullets = exp_out.get(e["id"])
+            if not isinstance(bullets, list) or not bullets or not all(isinstance(b, str) for b in bullets):
+                errs.append(f"role '{e['id']}' needs a non-empty list of bullets (roles may not be removed)")
                 continue
-            errs += _check_bullet_ids(rid, bids, exp_by_id[rid])
-
-    proj_by_id = {p["id"]: p for p in base.get("projects", [])}
-    chosen_proj = choices.get("projects")
-    chosen_pb = choices.get("project_bullets")
-    if not isinstance(chosen_proj, list) or not 1 <= len(chosen_proj) <= 4:
-        errs.append("projects must be a list of 1-4 project ids")
-    else:
-        if len(set(chosen_proj)) != len(chosen_proj):
-            errs.append("projects contains duplicates")
-        if not isinstance(chosen_pb, dict):
-            errs.append("project_bullets must be an object {project_id: [bullet_ids]}")
-            chosen_pb = {}
-        for pid in chosen_proj:
-            if pid not in proj_by_id:
-                errs.append(f"unknown project id '{pid}'")
-            else:
-                errs += _check_bullet_ids(pid, chosen_pb.get(pid), proj_by_id[pid])
-
-    group_ids = {s["id"] for s in base["skills"]}
-    order = choices.get("skills_order")
-    if not isinstance(order, list):
-        errs.append("skills_order must be a list of skill-group ids")
-    else:
-        unknown = [g for g in order if g not in group_ids]
+            errs += _check_bullets(e["id"], bullets, [b["text"] for b in e["bullets"]], base_text, owned, vocab)
+            exp_clean[e["id"]] = [b.strip() for b in bullets]
+        unknown = [k for k in exp_out if k not in {e["id"] for e in base["experience"]}]
         if unknown:
-            errs.append(f"unknown skill group ids {unknown}")
-        if len(set(order)) != len(order):
-            errs.append("skills_order contains duplicates")
-        if len([g for g in order if g in group_ids]) < 3:
-            errs.append("skills_order must keep at least 3 groups")
+            errs.append(f"unknown role ids {unknown}")
 
-    bold = choices.get("bold_terms", [])
-    if not isinstance(bold, list) or len(bold) > MAX_BOLD_TERMS:
-        errs.append(f"bold_terms must be a list of at most {MAX_BOLD_TERMS} terms")
-    else:
-        allowed = allowed_terms(base)
-        bad = [t for t in bold if not isinstance(t, str) or t.strip().lower() not in allowed]
-        if bad:
-            errs.append(f"bold_terms not in allowed terms: {bad}")
-    return errs
-
-
-def _check_bullet_ids(owner: str, bids, entry: dict) -> list[str]:
-    valid = {b["id"] for b in entry["bullets"]}
-    if not isinstance(bids, list) or not bids:
-        return [f"'{owner}' needs a non-empty list of bullet ids"]
-    errs = []
-    unknown = [b for b in bids if b not in valid]
-    if unknown:
-        errs.append(f"'{owner}': unknown bullet ids {unknown} (valid: {sorted(valid)})")
-    if len(set(bids)) != len(bids):
-        errs.append(f"'{owner}': duplicate bullet ids")
-    return errs
-
-
-def assemble_resume(base: dict, choices: dict) -> dict:
-    """Map validated choices onto the base file -> the flat dict resume_render expects.
-    All text is copied from base.json unchanged."""
-    text = {b["id"]: b["text"] for sec in ("experience", "projects")
-            for e in base[sec] for b in e["bullets"]}
-
-    experience = []
-    for e in base["experience"]:   # base order (reverse-chronological) is kept
-        experience.append({**{k: e[k] for k in ("role", "company", "location", "dates")},
-                           "bullets": [text[i] for i in choices["experience"][e["id"]]]})
-
+    # projects
     proj_by_id = {p["id"]: p for p in base.get("projects", [])}
-    projects = []
-    for pid in choices["projects"]:
-        p = proj_by_id[pid]
-        projects.append({"title": p["title"], "dates": p.get("dates", ""), "tech": p.get("tech", ""),
-                         "bullets": [text[i] for i in choices["project_bullets"][pid]]})
+    want = min(PROJECTS_SHOWN, len(proj_by_id))
+    proj_out = out.get("projects")
+    proj_clean: list[dict] = []
+    if not isinstance(proj_out, list) or len(proj_out) != want:
+        errs.append(f'"projects" must be a list of exactly {want} projects')
+    else:
+        seen = set()
+        for p in proj_out:
+            pid = p.get("id") if isinstance(p, dict) else None
+            if pid not in proj_by_id or pid in seen:
+                errs.append(f"invalid or duplicate project id {pid!r}")
+                continue
+            seen.add(pid)
+            bullets = p.get("bullets")
+            if not isinstance(bullets, list) or not 1 <= len(bullets) <= 4 or not all(isinstance(b, str) for b in bullets):
+                errs.append(f"project '{pid}' needs 1-4 bullets")
+                continue
+            errs += _check_bullets(pid, bullets, [b["text"] for b in proj_by_id[pid]["bullets"]], base_text, owned, vocab)
+            proj_clean.append({"id": pid, "bullets": [b.strip() for b in bullets]})
 
-    by_id = {s["id"]: s for s in base["skills"]}
-    order = [g for g in choices["skills_order"] if not by_id[g].get("always_last")]
-    order += [s["id"] for s in base["skills"] if s.get("always_last")]
-    skills = [{"label": by_id[g]["label"], "items": by_id[g].get("sep", " · ").join(by_id[g]["items"])}
-              for g in order]
+    # skills: unbacked items are removed, not rejected
+    skills_clean, removed = [], []
+    skills_out = out.get("skills")
+    if not isinstance(skills_out, list):
+        errs.append('"skills" must be a list of {label, items}')
+    else:
+        for g in skills_out:
+            if not isinstance(g, dict) or not isinstance(g.get("items"), list) or not g.get("label"):
+                continue
+            if g["label"].strip().lower() == "languages":
+                continue    # added by code
+            keep = []
+            for item in g["items"]:
+                if isinstance(item, str) and _skill_item_ok(item, base_text, owned, vocab):
+                    keep.append(item)
+                else:
+                    removed.append(str(item))
+            if keep:
+                skills_clean.append({"label": str(g["label"]), "items": keep})
+        if len(skills_clean) < 3:
+            errs.append("skills must keep at least 3 groups of skills that exist in the base resume")
 
-    return {
-        "name": base["name"], "contact": base["contact"], "work_auth": base.get("work_auth", ""),
-        "summary": base["summaries"][choices["summary_id"]],
-        "experience": experience, "projects": projects,
-        "education": base["education"], "skills": skills,
-        "bold_terms": choices.get("bold_terms", []),
-    }
+    cleaned = {"summary": summary.strip(), "skills": skills_clean,
+               "experience": exp_clean, "projects": proj_clean}
+    return errs, cleaned, removed
+
+
+def _check_bullets(owner: str, bullets: list[str], originals: list[str], base_text: str,
+                   owned: set[str], vocab: list[str]) -> list[str]:
+    errs = []
+    allowed_nums = _numbers(" ".join(originals))
+    for b in bullets:
+        if len(b.split()) > MAX_BULLET_WORDS:
+            errs.append(f"'{owner}': a bullet is over {MAX_BULLET_WORDS} words: {b[:60]!r}")
+        extra = _numbers(b) - allowed_nums
+        if extra:
+            errs.append(f"'{owner}': numbers not in the original entry {sorted(extra)} in: {b[:60]!r}")
+        tools = unowned_tools(b, base_text, owned, vocab)
+        if tools:
+            errs.append(f"'{owner}': technologies not in the base resume {tools} in: {b[:60]!r}")
+    return errs
+
+
+# --------------------------------------------------------------------------- #
+# Assembly
+# --------------------------------------------------------------------------- #
+def _display_terms(base: dict) -> list[str]:
+    """Canonical names of owned skills/tools, used to pick which words to bold."""
+    names: set[str] = set()
+    for g in base["skills"]:
+        if g.get("bold_exempt"):
+            continue
+        for item in g["items"]:
+            main = re.sub(r"\([^)]*\)", "", item).strip()
+            for q in main.split("/"):
+                q = q.strip()
+                if len(q) > 1:
+                    names.add(q)
+                    if q.lower().startswith("apache "):
+                        names.add(q[7:])
+    for p in base.get("projects", []):
+        for item in p.get("tech", "").split("·"):
+            if len(item.strip()) > 1:
+                names.add(item.strip())
+    names |= {x for x in base.get("extra_allowed_terms", []) if len(x) > 1}
+    return sorted(names)
+
+
+def pick_bold_terms(base: dict, jd_text: str, resume: dict) -> list[str]:
+    """Owned terms that appear in BOTH the job text and the tailored resume text (ATS emphasis)."""
+    body = " ".join([resume["summary"]] + [b for sec in ("experience", "projects")
+                                            for e in resume[sec] for b in e["bullets"]])
+    hits = [t for t in _display_terms(base) if _mentions(t, jd_text) and _mentions(t, body)]
+    hits.sort(key=lambda t: (-len(t), t.lower()))
+    return hits[:MAX_BOLD_TERMS]
+
+
+def assemble_resume(base: dict, cleaned: dict) -> dict:
+    """Combine the model's validated rewrite with the fixed facts in base.json -> flat dict for the renderer."""
+    experience = [{**{k: e[k] for k in ("role", "company", "location", "dates")},
+                   "bullets": cleaned["experience"][e["id"]]} for e in base["experience"]]
+    proj_by_id = {p["id"]: p for p in base["projects"]}
+    projects = [{"title": proj_by_id[p["id"]]["title"], "dates": proj_by_id[p["id"]].get("dates", ""),
+                 "tech": proj_by_id[p["id"]].get("tech", ""), "bullets": p["bullets"]}
+                for p in cleaned["projects"]]
+    skills = [{"label": g["label"], "items": " · ".join(g["items"])} for g in cleaned["skills"]]
+    for s in base["skills"]:
+        if s.get("always_last"):
+            skills.append({"label": s["label"], "items": s.get("sep", " · ").join(s["items"])})
+    return {"name": base["name"], "contact": base["contact"], "work_auth": base.get("work_auth", ""),
+            "summary": cleaned["summary"], "experience": experience, "projects": projects,
+            "education": base["education"], "skills": skills, "bold_terms": []}
 
 
 # --------------------------------------------------------------------------- #
@@ -273,17 +385,17 @@ def assemble_resume(base: dict, choices: dict) -> dict:
 def _base_for_prompt(base: dict, profile: str) -> str:
     hint = base["profiles"].get(profile.upper(), {})
     payload = {
-        "profile_hint": {"matched_profile": profile.upper(), **hint},
-        "summaries": base["summaries"],
+        "matched_profile": profile.upper(),
+        "reference_summary_for_this_profile": base["summaries"].get(hint.get("summary_id", ""), ""),
+        "default_projects_for_this_profile": hint.get("default_projects", []),
+        "default_skill_group_order_for_this_profile": hint.get("skills_order", []),
         "experience": [{"id": e["id"], "role": e["role"], "company": e["company"],
-                        "bullets": e["bullets"]} for e in base["experience"]],
+                       "bullets": [b["text"] for b in e["bullets"]]} for e in base["experience"]],
         "projects": [{"id": p["id"], "title": p["title"], "tech": p.get("tech", ""),
-                      "bullets": p["bullets"]} for p in base.get("projects", [])],
-        "skills": [{"id": s["id"], "label": s["label"], "items": s["items"]}
-                   for s in base["skills"] if not s.get("always_last")],
-        "allowed_terms": sorted(allowed_terms(base)),
+                      "bullets": [b["text"] for b in p["bullets"]]} for p in base["projects"]],
+        "skills": [{"label": s["label"], "items": s["items"]} for s in base["skills"] if not s.get("always_last")],
     }
-    return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(payload, ensure_ascii=False, indent=1)
 
 
 def _parse_json(raw: str):
@@ -296,34 +408,55 @@ def _parse_json(raw: str):
     return json.loads(raw[start:end + 1] if start != -1 and end > start else raw)
 
 
+_STR_LIST = {"type": "array", "items": {"type": "string"}}
+RESUME_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "skills": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"label": {"type": "string"}, "items": _STR_LIST},
+            "required": ["label", "items"]}},
+        "experience": {"type": "object", "additionalProperties": _STR_LIST},
+        "projects": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "bullets": _STR_LIST},
+            "required": ["id", "bullets"]}},
+    },
+    "required": ["summary", "skills", "experience", "projects"],
+}
+
+
 def _call_model(user_message: str) -> str:
-    response = _get_client().messages.create(
-        model=MODEL, max_tokens=1500, system=RESUME_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return response.content[0].text
+    """One CLI call; returns the structured reply as JSON text (validated by the caller)."""
+    structured, _generated_by = llm.call_model("write", user_message, schema=RESUME_OUTPUT_SCHEMA,
+                                                system=RESUME_SYSTEM_PROMPT)
+    return json.dumps(structured, ensure_ascii=False)
 
 
-def select_content(base: dict, profile: str, job_title: str, job_description: str,
-                   call_model=_call_model) -> dict:
-    """Ask the model for choices, validate them, retry once with the errors.
-    Raises ResumeError if the second attempt is also invalid."""
-    message = (f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{job_description[:4000]}\n\n"
-               f"RESUME CONTENT (JSON):\n{_base_for_prompt(base, profile)}")
+def rewrite_resume(base: dict, profile: str, job_title: str, jd_clean: str,
+                   call_model=_call_model) -> tuple[dict, dict, list[str]]:
+    """Ask the model for the rewrite, validate, retry once with the reasons.
+
+    Returns (raw_model_output, cleaned_output, removed_skills). Raises ResumeError
+    if the second attempt is still invalid.
+    """
+    message = (f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_clean}\n\n"
+               f"BASE RESUME (JSON):\n{_base_for_prompt(base, profile)}")
     problems: list[str] = []
     for attempt in (1, 2):
         user = message if attempt == 1 else (
             message + "\n\nYour previous answer was rejected for these reasons:\n- "
             + "\n- ".join(problems) + "\nReturn corrected JSON only.")
         try:
-            choices = _parse_json(call_model(user))
+            raw = _parse_json(call_model(user))
         except (json.JSONDecodeError, ValueError) as e:
             problems = [f"not valid JSON ({e})"]
             continue
-        problems = validate_choices(base, choices)
+        problems, cleaned, removed = validate_tailored(base, raw)
         if not problems:
-            return choices
-    raise ResumeError("invalid model choices after retry: " + "; ".join(problems))
+            return raw, cleaned, removed
+    raise ResumeError("invalid model output after retry: " + "; ".join(problems[:6]))
 
 
 # --------------------------------------------------------------------------- #
@@ -333,43 +466,64 @@ def _slug(text: str, limit: int = 40) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")[:limit]
 
 
+def resume_paths(base: dict, company_name: str, job_title: str, out_dir: Path) -> tuple[Path, Path]:
+    """Deterministic (pdf, audit) paths for one application, so a finished resume is found again."""
+    stem = f"{_slug(base['name'].replace(' ', '_'), 30)}_Resume_{_slug(company_name, 30)}_{_slug(job_title)}"
+    return Path(out_dir) / f"{stem}.pdf", Path(out_dir) / f"{stem}.audit.json"
+
+
+def existing_resume(base: dict, company_name: str, job_title: str, out_dir: Path) -> dict | None:
+    """The finished resume for this application if both files exist (never regenerate it)."""
+    pdf_path, audit_path = resume_paths(base, company_name, job_title, out_dir)
+    if pdf_path.exists() and pdf_path.stat().st_size > 0 and audit_path.exists():
+        return {"pdf_path": str(pdf_path), "audit_path": str(audit_path)}
+    return None
+
+
 def generate_tailored_resume(base: dict, profile: str, company_name: str, job_title: str,
                              job_description: str, out_dir: Path,
                              call_model=_call_model) -> dict:
-    """Choose content, validate, assemble, render a one-page PDF into out_dir.
+    """Rewrite, validate, assemble and render a one-page PDF into out_dir.
 
-    Returns {"pdf_path": str, "choices_path": str}. Raises ResumeError on failure.
-    The model's choices are saved next to the PDF so every selection is auditable.
+    Returns {"pdf_path", "audit_path"}. Raises ResumeError on failure. The audit
+    file records the model output, removed skills and original-vs-rewritten bullets.
     """
     from resume_render import render_resume_pdf
 
-    choices = select_content(base, profile, job_title, job_description, call_model)
-    resume = assemble_resume(base, choices)
+    jd_clean = clean_job_description(job_description, JD_CHARS_FOR_RESUME)
+    raw, cleaned, removed = rewrite_resume(base, profile, job_title, jd_clean, call_model)
+    resume = assemble_resume(base, cleaned)
+    resume["bold_terms"] = pick_bold_terms(base, jd_clean, resume)
 
-    stem = f"{_slug(base['name'].replace(' ', '_'), 30)}_Resume_{_slug(company_name, 30)}_{_slug(job_title)}"
     out_dir = Path(out_dir)
-    pdf_path = out_dir / f"{stem}.pdf"
-    choices_path = out_dir / f"{stem}.choices.json"
+    pdf_path, audit_path = resume_paths(base, company_name, job_title, out_dir)
     try:
         render_resume_pdf(resume, pdf_path)
     except Exception as e:
         raise ResumeError(f"render failed: {e}") from e
-    out_dir.mkdir(parents=True, exist_ok=True)
-    choices_path.write_text(json.dumps(
-        {"company": company_name, "job_title": job_title, "profile": profile, "choices": choices},
-        indent=2, ensure_ascii=False), encoding="utf-8")
-    return {"pdf_path": str(pdf_path), "choices_path": str(choices_path)}
+
+    originals = {e["id"]: [b["text"] for b in e["bullets"]] for sec in ("experience", "projects") for e in base[sec]}
+    audit = {
+        "company": company_name, "job_title": job_title, "profile": profile,
+        "job_text_used": jd_clean, "removed_skills": removed, "bold_terms": resume["bold_terms"],
+        "summary": cleaned["summary"],
+        "experience": {rid: {"original": originals[rid], "rewritten": b} for rid, b in cleaned["experience"].items()},
+        "projects": {p["id"]: {"original": originals[p["id"]], "rewritten": p["bullets"]} for p in cleaned["projects"]},
+        "model_output": raw,
+    }
+    audit_path.write_text(json.dumps(audit, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"pdf_path": str(pdf_path), "audit_path": str(audit_path)}
 
 
-def check_pdf(pdf_path: str, base: dict) -> dict:
-    """Test helper: page count, text extractable, and how many base bullets appear in the PDF."""
+def check_pdf(pdf_path: str, resume_bullets: list[str]) -> dict:
+    """Test helper: page count, extractable text, and how many assembled bullets appear in the PDF."""
     from pypdf import PdfReader
     reader = PdfReader(pdf_path)
     squash = lambda s: re.sub(r"\s+", "", s)
     pdf_text = squash("".join(p.extract_text() or "" for p in reader.pages))
-    bullets = [b["text"] for sec in ("experience", "projects") for e in base[sec] for b in e["bullets"]]
     return {"pages": len(reader.pages), "text_chars": len(pdf_text),
-            "bullets_found": sum(squash(b) in pdf_text for b in bullets)}
+            "bullets_found": sum(squash(b) in pdf_text for b in resume_bullets),
+            "bullets_total": len(resume_bullets)}
 
 
 def _main():
@@ -389,9 +543,12 @@ def _main():
         try:
             res = generate_tailored_resume(base, args.profile, args.company, title, jd, out_dir)
         except ResumeError as e:
-            print(f"{jd_file}: FAILED — {e}")
+            print(f"{jd_file}: FAILED - {e}")
             continue
-        print(f"{jd_file}: {res['pdf_path']}  {check_pdf(res['pdf_path'], base)}")
+        audit = json.loads(Path(res["audit_path"]).read_text(encoding="utf-8"))
+        bullets = [b for sec in ("experience", "projects") for v in audit[sec].values() for b in v["rewritten"]]
+        print(f"{jd_file}: {res['pdf_path']}  {check_pdf(res['pdf_path'], bullets)}  "
+              f"removed skills: {audit['removed_skills']}")
 
 
 if __name__ == "__main__":

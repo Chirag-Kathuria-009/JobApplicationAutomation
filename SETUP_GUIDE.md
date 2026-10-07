@@ -26,31 +26,25 @@ job_pipeline/
 
 ---
 
-## Step 1: Get a Claude API key (5 minutes)
+## Step 1: Install the Claude Code CLI and log in (5 minutes)
 
-1. Go to: **console.anthropic.com**
-2. Sign up with any email
-3. Go to **API Keys** → **Create Key**
-4. Copy the key — looks like: `sk-ant-api03-...`
-5. You get **$5 free credit** on signup — enough for ~1,500 job scorings
+The pipeline uses your **Claude subscription** through the Claude Code command line. It needs **no API key** and has no per-call billing.
+
+1. Open **PowerShell** and run: `irm https://claude.ai/install.ps1 | iex`
+2. Open a new terminal and run `claude` once. Log in with the account that has your Claude plan, then exit.
+3. Check it: `claude --version`
 
 ---
 
-## Step 2: Set the API key as an environment variable (Windows)
+## Step 2: Make sure no API key is set
 
-Open **Command Prompt as Administrator** and run:
-
-```cmd
-setx ANTHROPIC_API_KEY "sk-ant-api03-YOUR-KEY-HERE" /M
-```
-
-Close and reopen your terminal. Verify it works:
+With `ANTHROPIC_API_KEY` set, Claude Code bills the API instead of your subscription. The pipeline removes it from every call, but it is cleaner not to have one:
 
 ```cmd
 echo %ANTHROPIC_API_KEY%
 ```
 
-You should see your key printed.
+This should print nothing. If the pipeline cannot find `claude`, copy `.env.example` to `.env` and set `CLAUDE_CLI` to the full path of `claude.exe`.
 
 ---
 
@@ -59,7 +53,7 @@ You should see your key printed.
 Open terminal in the `job_pipeline` folder and run:
 
 ```cmd
-pip install anthropic httpx playwright beautifulsoup4 rich
+pip install -r requirements.txt
 ```
 
 Then install the Playwright browser:
@@ -174,8 +168,8 @@ python run_pipeline.py --company "Trade Republic"
 
 ## Troubleshooting
 
-**"ANTHROPIC_API_KEY not found"**
-→ Re-run Step 2. Make sure you opened a NEW terminal after setting the variable.
+**"Claude CLI not usable"**
+→ Run `claude` in a terminal and log in again (as the same Windows user that runs the scheduled task). If it says usage limit, wait for the reset; nothing is lost and the next run continues.
 
 **"playwright install chromium" fails**
 → Run Command Prompt as Administrator

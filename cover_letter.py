@@ -1,19 +1,15 @@
 """
 job_pipeline/cover_letter.py
 ==============================
-Generates tailored cover letters using Claude API.
+Generates tailored cover letters through llm.call_model (Claude Code CLI on the
+owner's subscription - no API key).
 Each letter is specific to the company, role, and job description.
 Output is saved as a Markdown file ready to copy-paste or convert to PDF.
 """
 
-import os
-import anthropic
 from datetime import datetime
-from dotenv import load_dotenv
 
-load_dotenv()
-
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+from llm import call_model
 
 COVER_LETTER_SYSTEM_PROMPT = """You are an expert career coach writing cover letters for a Data Engineer / Data Analyst / Data Scientist applying to German companies.
 
@@ -81,14 +77,8 @@ Important:
 
 Write the letter now:"""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1000,
-        system=COVER_LETTER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}]
-    )
-
-    letter_body = response.content[0].text.strip()
+    letter_body, _generated_by = call_model("write", user_message, system=COVER_LETTER_SYSTEM_PROMPT)
+    letter_body = letter_body.strip()
 
     # Wrap with metadata header for easy reference
     output = f"""---
@@ -135,11 +125,5 @@ Role I'm interested in: {role_title}
 My profile (use 1-2 specific facts):
 {profile[:2000]}"""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=400,
-        system=system,
-        messages=[{"role": "user", "content": user_message}]
-    )
-
-    return response.content[0].text.strip()
+    text, _generated_by = call_model("write", user_message, system=system)
+    return text.strip()

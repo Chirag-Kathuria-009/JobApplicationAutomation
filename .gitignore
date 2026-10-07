@@ -72,3 +72,9 @@ desktop.ini
 
 # Near-threshold calibration log (job titles/companies from your runs)
 near_threshold_log.jsonl
+
+# Pipeline runtime state
+.pipeline.lock
+last_run.json
+tracker.json.bak
+tracker.json.tmp

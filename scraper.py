@@ -7,10 +7,12 @@ Handles Greenhouse, Workday, Lever, and Proprietary portals via Playwright.
 Returns a list of dicts: [{title, description, url, location, date_posted, ats}]
 """
 
+import html
 import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urljoin, quote
 from xml.etree import ElementTree as ET
@@ -115,11 +117,26 @@ DATA_SEARCH_TERMS = [
 
 MAX_AGE_DAYS = 7
 
+# Stored job-description length. Large enough to keep the requirements section of
+# long postings; consumers (matcher, resume) trim/clean it again for their prompts.
+MAX_DESCRIPTION_CHARS = 8000
+
 # Used to pull a contact (SPOC) email out of a job description when present.
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # Addresses that are never a real recruiter contact (assets, tracking, examples).
 _EMAIL_NOISE = ("example.com", "sentry.io", "@2x", ".png", ".jpg", ".gif",
                 "wixpress", "no-reply", "noreply", "donotreply")
+
+
+def html_to_text(markup: str) -> str:
+    """HTML (possibly entity-escaped, as Greenhouse returns it) -> plain text with
+    one block per line, so section headings stay on their own lines."""
+    if not markup:
+        return ""
+    if "&lt;" in markup and "<" not in markup:   # escaped HTML: unescape first
+        markup = html.unescape(markup)
+    text = BeautifulSoup(markup, "html.parser").get_text(separator="\n")
+    return re.sub(r"\n\s*\n+", "\n", text).strip()
 
 
 def extract_spoc_email(*texts: str) -> str:
@@ -256,16 +273,14 @@ def scrape_greenhouse(company: dict) -> list[dict]:
             if not is_posted_within_days(date_posted):
                 continue
 
-            description = BeautifulSoup(
-                job.get("content", ""), "html.parser"
-            ).get_text(separator=" ")
+            description = html_to_text(job.get("content", ""))
 
             if not requires_english(description):
                 continue
 
             jobs.append({
                 "title": title,
-                "description": description[:3000],
+                "description": description[:MAX_DESCRIPTION_CHARS],
                 "url": job.get("absolute_url", ""),
                 "location": location,
                 "date_posted": date_posted,
@@ -333,7 +348,7 @@ def scrape_lever(company: dict) -> list[dict]:
 
             jobs.append({
                 "title": title,
-                "description": description[:3000],
+                "description": description[:MAX_DESCRIPTION_CHARS],
                 "url": job.get("hostedUrl", ""),
                 "location": location,
                 "date_posted": date_posted,
@@ -563,7 +578,7 @@ def scrape_radancy(company: dict) -> list[dict]:
                     desc_el = dsoup.find(class_=re.compile(r"job-description|ats-description", re.I))
                     text = (desc_el or dsoup).get_text(separator=" ", strip=True)
                     if text:
-                        description = text[:3000]
+                        description = text[:MAX_DESCRIPTION_CHARS]
                         spoc_email = extract_spoc_email(text)
             except Exception:
                 pass
@@ -634,16 +649,14 @@ def scrape_ashby(company: dict) -> list[dict]:
             if not is_posted_within_days(date_posted):
                 continue
 
-            description = job.get("descriptionPlain") or BeautifulSoup(
-                job.get("descriptionHtml", ""), "html.parser"
-            ).get_text(separator=" ")
+            description = job.get("descriptionPlain") or html_to_text(job.get("descriptionHtml", ""))
 
             if not requires_english(description):
                 continue
 
             jobs.append({
                 "title": title,
-                "description": description[:3000],
+                "description": description[:MAX_DESCRIPTION_CHARS],
                 "url": job.get("jobUrl", ""),
                 "location": location or addr.get("addressLocality", ""),
                 "date_posted": date_posted,
@@ -724,9 +737,9 @@ def scrape_smartrecruiters(company: dict) -> list[dict]:
                     for k in ("companyDescription", "jobDescription",
                               "qualifications", "additionalInformation")
                 )
-                text = BeautifulSoup(html, "html.parser").get_text(separator=" ").strip()
+                text = html_to_text(html).strip()
                 if text:
-                    description = text[:3000]
+                    description = text[:MAX_DESCRIPTION_CHARS]
                     spoc_email = extract_spoc_email(text)
             except Exception:
                 pass
@@ -787,13 +800,11 @@ def scrape_recruitee(company: dict) -> list[dict]:
             if not is_posted_within_days(date_posted):
                 continue
 
-            description = BeautifulSoup(
-                o.get("description", "") or "", "html.parser"
-            ).get_text(separator=" ").strip()
+            description = html_to_text(o.get("description", "") or "").strip()
 
             jobs.append({
                 "title": title,
-                "description": description[:3000] or f"Role at {company['name']}.",
+                "description": description[:MAX_DESCRIPTION_CHARS] or f"Role at {company['name']}.",
                 "url": o.get("careers_url", ""),
                 "location": location,
                 "date_posted": date_posted,
@@ -906,11 +917,9 @@ def scrape_workday_cxs(company: dict, tenant: str, dc: str, site: str) -> list[d
                     date_posted = info.get("startDate", "") or ""
                     location = info.get("location", location) or location
                     job_url = info.get("externalUrl", job_url) or job_url
-                    text = BeautifulSoup(
-                        info.get("jobDescription", "") or "", "html.parser"
-                    ).get_text(separator=" ").strip()
+                    text = html_to_text(info.get("jobDescription", "") or "").strip()
                     if text:
-                        description = text[:3000]
+                        description = text[:MAX_DESCRIPTION_CHARS]
                         spoc_email = extract_spoc_email(text)
                 except Exception:
                     pass
@@ -993,9 +1002,7 @@ def scrape_amazon(company: dict) -> list[dict]:
                         j.get("basic_qualifications", ""),
                         j.get("preferred_qualifications", ""),
                     ]))
-                    description = BeautifulSoup(
-                        raw_desc, "html.parser"
-                    ).get_text(separator=" ").strip()
+                    description = html_to_text(raw_desc).strip()
 
                     job_path = j.get("job_path", "")
                     url = (f"https://www.amazon.jobs{job_path}" if job_path
@@ -1003,7 +1010,7 @@ def scrape_amazon(company: dict) -> list[dict]:
 
                     jobs.append({
                         "title": title,
-                        "description": description[:3000] or f"Role at {company['name']}.",
+                        "description": description[:MAX_DESCRIPTION_CHARS] or f"Role at {company['name']}.",
                         "url": url,
                         "location": location,
                         "date_posted": date_posted,
@@ -1052,6 +1059,117 @@ def _find_jobposting_jsonld(html: str) -> dict | None:
     return None
 
 
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+_FEED_HEADERS = {"User-Agent": _BROWSER_UA, "Accept": "application/rss+xml,application/xml,text/xml,*/*;q=0.8",
+                 "Accept-Language": "en-US,en;q=0.9"}
+# Hosts that mean "this link is the real application page".
+_APPLY_HOSTS = ("join.com", "personio.", "greenhouse.io", "lever.co", "ashbyhq.com", "workable.com",
+                "recruitee.com", "smartrecruiters.com", "teamtailor.com", "softgarden.io", "bamboohr.com")
+_BOT_CHECK = re.compile(r"just a moment|attention required|verify you are human|access denied", re.I)
+
+
+def _find_apply_url(page_html: str) -> str:
+    """First link to a known ATS / application host on a job page, with tracking query dropped."""
+    for url in re.findall(r'href="(https?://[^"]+)"', page_html):
+        url = html.unescape(url)
+        if "berlinstartupjobs.com" not in url and any(h in url for h in _APPLY_HOSTS):
+            return url.split("?")[0]
+    return ""
+
+
+def scrape_berlinstartupjobs(source: dict) -> list[dict]:
+    """
+    Berlin Startup Jobs: the public RSS feed lists postings ("Role // Company"); the feed
+    text is only a short teaser, so each job page is then read with a normal Chromium
+    browser (plain HTTP clients get a bot-check page there) for the full description
+    and the real application link (usually Join / Personio / Greenhouse).
+
+    Polite by design: a few feed pages, at most `max_details` job pages per run, one page
+    at a time with a pause. If a bot-check page ever appears, the run stops using the
+    site instead of trying to get around it. The same role / English / freshness
+    filters as the other scrapers are applied.
+    """
+    ch = source["channel"]
+    pending: list[tuple[str, str, str, str]] = []     # (role, company, link, posted_iso)
+    seen: set[str] = set()
+    for feed in source.get("feeds", []):
+        for page_no in range(1, source.get("max_pages", 3) + 1):
+            url = feed if page_no == 1 else f"{feed}?paged={page_no}"
+            try:
+                resp = httpx.get(url, headers=_FEED_HEADERS, timeout=20, follow_redirects=True)
+                if resp.status_code != 200 or b"<rss" not in resp.content[:600]:
+                    break
+                items = ET.fromstring(resp.content).findall("./channel/item")
+            except Exception as e:
+                print(f"  [{ch}] feed error {url}: {e}")
+                break
+            if not items:
+                break
+            for item in items:
+                link = (item.findtext("link") or "").strip()
+                role, _, company = (item.findtext("title") or "").strip().rpartition(" // ")
+                if not role:
+                    role, company = company, ""
+                if not link or link in seen or not is_relevant_role(role):
+                    continue
+                try:
+                    posted = parsedate_to_datetime(item.findtext("pubDate") or "").isoformat()
+                except (TypeError, ValueError):
+                    posted = ""
+                if not is_posted_within_days(posted, source.get("max_age_days", MAX_AGE_DAYS)):
+                    continue
+                seen.add(link)
+                pending.append((role.strip(), company.strip(), link, posted))
+            time.sleep(0.5)
+
+    pending = pending[:source.get("max_details", 25)]
+    if not pending:
+        return []
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(f"  [{ch}] Playwright not installed — cannot read job pages")
+        return []
+
+    jobs: list[dict] = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(user_agent=_BROWSER_UA)
+            for role, company, link, posted in pending:
+                try:
+                    page.goto(link, timeout=30000, wait_until="domcontentloaded")
+                    page.wait_for_timeout(800)
+                    page_html = page.content()
+                    if _BOT_CHECK.search(page_html[:4000]):
+                        print(f"  [{ch}] bot-check page shown — stopping here, not bypassing it")
+                        break
+                    box = page.query_selector(".bsj-template__content")
+                    text = (box.inner_text() if box else "").strip()
+                except Exception as e:
+                    print(f"  [{ch}] could not read {link}: {e}")
+                    continue
+                time.sleep(1.0)
+                if not text or not requires_english(text):
+                    continue
+                jobs.append({
+                    "title": role,
+                    "description": text[:MAX_DESCRIPTION_CHARS],
+                    "url": _find_apply_url(page_html) or link,
+                    "board_url": link,
+                    "location": "",
+                    "date_posted": posted,
+                    "spoc_email": extract_spoc_email(text),
+                    "ats": "StartupBoard",
+                    "company": company or "Unknown startup",
+                    "source_channel": ch,
+                })
+        finally:
+            browser.close()
+    return jobs
+
+
 def scrape_startup_source(source: dict) -> list[dict]:
     """
     Scrape one Tier D job board. Returns jobs in the same shape as the ATS
@@ -1064,6 +1182,8 @@ def scrape_startup_source(source: dict) -> list[dict]:
     target location, English-language requirement. Posting age is NOT applied
     as a hard filter here beyond the shared MAX_AGE_DAYS safety net.
     """
+    if source.get("type") == "rss_browser":
+        return scrape_berlinstartupjobs(source)
     if source.get("type") != "rss_jsonld":
         print(f"  [{source['channel']}] unsupported source type {source.get('type')!r}")
         return []
@@ -1117,9 +1237,7 @@ def scrape_startup_source(source: dict) -> list[dict]:
             if not is_posted_within_days(date_posted):
                 continue
 
-            description = BeautifulSoup(
-                posting.get("description", "") or "", "html.parser"
-            ).get_text(separator=" ").strip()
+            description = html_to_text(posting.get("description", "") or "").strip()
             if not requires_english(description):
                 continue
 
@@ -1127,7 +1245,7 @@ def scrape_startup_source(source: dict) -> list[dict]:
             title = (posting.get("title") or role_part).strip()
             jobs.append({
                 "title": title,
-                "description": description[:3000],
+                "description": description[:MAX_DESCRIPTION_CHARS],
                 "url": posting.get("url") or link,
                 "board_url": link,
                 "location": location,

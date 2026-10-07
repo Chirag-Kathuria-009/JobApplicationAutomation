@@ -1,0 +1,10 @@
+{
+  "score": {
+    "provider": "claude_cli",
+    "model": "sonnet"
+  },
+  "write": {
+    "provider": "claude_cli",
+    "model": "sonnet"
+  }
+}

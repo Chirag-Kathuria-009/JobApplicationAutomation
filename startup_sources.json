@@ -1,9 +1,10 @@
 {
   "meta": {
     "tier": "D",
-    "description": "Tier D (startups) is sourced from job boards, not a fixed company list. Each source is re-scraped every run. Boards are checked for reachability on 2026-10-01; sources that cannot be scraped without a login / anti-bot bypass are kept here as enabled:false so the reason is recorded rather than silently dropped.",
+    "description": "Tier D (startups) is sourced from job boards, not a fixed company list. Each source is re-scraped every run. Sources checked 2026-10-07; those that cannot be used within the site's rules or without defeating its bot protection are kept as enabled:false with the reason.",
     "types": {
-      "rss_jsonld": "RSS feed(s) list posting URLs; each posting page carries schema.org JobPosting JSON-LD (description, date, location, direct ATS url)."
+      "rss_jsonld": "RSS feed(s) list posting URLs; each posting page carries schema.org JobPosting JSON-LD (description, date, location, direct ATS url).",
+      "rss_browser": "Public RSS feed lists postings; each job page is read with a normal Chromium browser (plain HTTP gets a bot-check there). Stops if a bot-check appears."
     }
   },
   "sources": [
@@ -20,12 +21,25 @@
       "notes": "Verified working. Feed = 100 newest DeepTech-startup jobs; ?skills=<tag> gives filtered feeds - add more feed URLs here to widen coverage."
     },
     {
+      "channel": "berlinstartupjobs",
+      "name": "Berlin Startup Jobs",
+      "type": "rss_browser",
+      "enabled": true,
+      "feeds": [
+        "https://berlinstartupjobs.com/engineering/feed/"
+      ],
+      "max_pages": 3,
+      "max_details": 25,
+      "notes": "Verified 2026-10-07: public RSS (robots.txt allows it), 12 items per page, ~3 pages. Title format 'Role // Company'. Feed text is a teaser; job pages load in plain Chromium and link to the real application page (often join.com). Many postings are German-only, which the English filter drops. Low volume (about 150 jobs open in total, newest often a week old), so max_age_days is 30; the tracker prevents repeats.",
+      "max_age_days": 30
+    },
+    {
       "channel": "wellfound",
       "name": "Wellfound (AngelList) - Germany",
       "type": "unsupported",
       "enabled": false,
       "url": "https://wellfound.com/location/germany",
-      "notes": "HTTP 403 to non-browser clients (bot protection). Needs a logged-in browser session / paid API; not attempted."
+      "notes": "Do not scrape: Wellfound's terms prohibit scraping/automated collection. Use its email job alerts instead."
     },
     {
       "channel": "honeypot",
@@ -33,7 +47,7 @@
       "type": "unsupported",
       "enabled": false,
       "url": "https://www.honeypot.io/",
-      "notes": "Connection failed from the dev machine, and the job board is candidate-login gated. Revisit with a logged-in session."
+      "notes": "www.honeypot.io resolves but the connection times out from the dev machine (plain HTTP and Chromium). Retry later; no public feed known."
     },
     {
       "channel": "eu-startups",
@@ -41,7 +55,7 @@
       "type": "unsupported",
       "enabled": false,
       "url": "https://www.eu-startups.com/jobs/",
-      "notes": "HTTP 403 to non-browser clients. Needs Playwright with a real browser profile; not attempted."
+      "notes": "Cloudflare 'Just a moment' challenge for scripts and headless browsers. Not bypassed. Use its job alerts or newsletter."
     },
     {
       "channel": "otta",
@@ -49,7 +63,7 @@
       "type": "unsupported",
       "enabled": false,
       "url": "https://otta.com/",
-      "notes": "otta.com now redirects to Welcome to the Jungle, whose job search requires login. No public feed found."
+      "notes": "otta.com is now Welcome to the Jungle; its job pages return 403 to scripts and search needs login. Use its email alerts."
     },
     {
       "channel": "tech.eu",
@@ -57,7 +71,7 @@
       "type": "unsupported",
       "enabled": false,
       "url": "https://jobs.tech.eu/",
-      "notes": "jobs.tech.eu redirects to the tech.eu homepage from a plain HTTP client; the board's data endpoint was not identified. Needs investigation in a browser."
+      "notes": "jobs.tech.eu now lands on the tech.eu news homepage; no job listing or feed is reachable. Revisit if the board moves."
     }
   ]
 }

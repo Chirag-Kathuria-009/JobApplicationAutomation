@@ -115,7 +115,9 @@ claude_implementation/
 ├── profile_*.example.md   # Templates for the three summaries
 ├── startup_sources.json   # Tier D job-board sources (re-scraped every run)
 ├── requirements.txt       # Python dependencies
-├── .env                   # ANTHROPIC_API_KEY (git-ignored)          ← you create
+├── llm.py                 # The only place models are called (Claude Code CLI)
+├── models.json            # Which model each task uses (score / write)
+├── .env                   # optional: CLAUDE_CLI path (git-ignored)
 ├── .env.example           # Template for .env
 ├── SETUP_GUIDE.md         # Step-by-step Windows setup walkthrough
 │
@@ -132,7 +134,7 @@ claude_implementation/
 ## Prerequisites
 
 - **Python 3.10+** (uses modern type hints like `list[dict]` and `str | None`)
-- An **Anthropic API key** — get one at <https://console.anthropic.com>
+- The **Claude Code CLI**, installed and logged in with your Claude subscription (run `claude` once and log in). All model calls go through `claude -p`: **no Anthropic API key and no API billing**. Install on Windows (PowerShell): `irm https://claude.ai/install.ps1 | iex`.
 - For Workday/proprietary portals: **Playwright** + a headless Chromium browser
 
 ---
@@ -146,10 +148,9 @@ pip install -r requirements.txt
 # 2. Install the Playwright browser (needed for Workday / JS-heavy portals)
 playwright install chromium
 
-# 3. Add your API key
-#    Copy the template and paste your real key into .env
-cp .env.example .env
-#    then edit .env  →  ANTHROPIC_API_KEY=sk-ant-api03-...
+# 3. Make sure the Claude Code CLI works from your terminal
+claude --version          # installed?  then run `claude` once and log in
+#    Optional: if `claude` is not on PATH, copy .env.example to .env and set CLAUDE_CLI=<full path to claude.exe>
 
 # 4. Create your profile
 cp profile.example.md profile.md
@@ -160,8 +161,9 @@ cp profile.example.md profile.md
 
 > **Windows:** see [`SETUP_GUIDE.md`](SETUP_GUIDE.md) for a click-by-click
 > walkthrough including Task Scheduler automation. You can use `copy` instead of
-> `cp`. The API key can also be set as a system environment variable
-> (`setx ANTHROPIC_API_KEY "..."`) instead of using `.env`.
+> `cp`. Do not set `ANTHROPIC_API_KEY`: with a key present, Claude Code would bill
+> the API instead of your subscription (the pipeline removes it from every call
+> and warns if it finds one).
 
 ---
 
@@ -169,7 +171,8 @@ cp profile.example.md profile.md
 
 | File | What you set |
 |------|--------------|
-| `.env` | Your `ANTHROPIC_API_KEY`. |
+| `.env` | Optional: `CLAUDE_CLI` (full path to `claude.exe`) if it is not on PATH. |
+| `models.json` | Model per task: `score` (profile matching) and `write` (resume + cover letter), e.g. `"model": "sonnet"` or `"haiku"`. Changing the scoring model shifts scores, so re-check the 0.60 cutoff. |
 | `profile.md` | Your CV-in-markdown: skills, experience, projects, salary, work authorisation, standard form answers. Read on **every** run and injected into scoring/cover-letter/resume prompts. |
 | `companies.json` | The list of target companies. Each entry has a `name`, `category`, `careers_url`, `ats` (which scraper to use), an `ats_handle`/board token, a `fit_tier` (A/B/C), and optional `"skip": true` to disable a broken portal. |
 | `profile_de.md` / `profile_ds.md` / `profile_ai.md` | Short positioning summary per resume variant; every job is scored against all three. Missing files are skipped; if none exist, `profile.md` is used as a single profile. |
@@ -220,13 +223,36 @@ safety net in `scraper.py`; the run summary prints how many postings it dropped.
 Generated cover letters and resumes land in `applications/<Company>/`, and every
 processed job is appended to `tracker.json`.
 
-**Tailored resume PDFs.** The model never writes resume text: it only picks and
-orders the pre-written bullets in `base.json`, which code validates (unknown ids
-or terms are rejected, one retry) and renders to a fixed one-page layout. Each
-PDF has a `.choices.json` beside it recording the selection. Jobs with a PDF get
-status `pending_review`; if tailoring fails the job keeps its cover letter and
-`resume_error` is set. One-time setup: `playwright install chromium`. Test on
-saved job descriptions: `python resume.py --test jd1.txt jd2.txt --profile DE`.
+**Failure recovery and duplicates.** A job is saved to `tracker.json` the moment
+it is scored and again after each finished step (cover letter, resume); saves are
+atomic and keep a `.bak`. A job with unfinished steps has status `in_progress`
+and keeps its job text, so the next run finishes it first, without re-scoring and
+without redoing a finished step, even if the posting is gone. Each step is tried
+at most 3 times across runs, then the job ends as `resume_failed` or
+`needs_attention`. If the API key is rejected, credit runs out, or 3 calls in a row
+fail, the run stops with exit code 2 and the rest stays pending (`last_run.json`
+records why). Files already on disk are reused. A lock file stops two runs
+overlapping (exit code 3). `python run_pipeline.py --pending-only` finishes
+unfinished jobs without scraping. Duplicates (`dedupe.py`) are matched by ATS
+posting id, URL without tracking parameters, company + title (ignoring GmbH/AG
+and (m/w/d)), or identical job text under the same company; the same role in
+several cities counts as one application. Tests: `python tests/test_recovery.py`.
+
+**Tailored resume PDFs.** The model rewrites your base resume for the job
+(summary, skill order, STAR-style bullets, the 3 most relevant projects) and
+returns JSON; fixed facts (titles, companies, dates, education) come from
+`base.json`. Code then rejects the rewrite (one retry, then `resume_failed`) if a
+number isn't in the original entry, a technology from `tech_vocabulary.json` isn't
+already in your base resume, a role is missing, or the project count is wrong;
+skills your base resume can't back up are removed. The result is rendered to a
+fixed one-page layout, with an `.audit.json` beside the PDF showing original vs
+rewritten bullets. Jobs with a PDF get status `pending_review`; if tailoring
+fails the job keeps its cover letter and `resume_error` is set. The model sees
+only the role, requirements and company sections of the posting (`jd_cleaner.py`
+drops benefits and legal text). The check cannot catch a rewrite that merely
+sounds stronger than the facts, so read the PDF before sending. One-time setup:
+`playwright install chromium`. Test on saved job descriptions:
+`python resume.py --test jd1.txt jd2.txt --profile DE`.
 
 ---
 
@@ -306,7 +332,7 @@ daily runs cost far less (only genuinely new postings are billed).
 This repo is configured so **no secrets or personal data are ever committed**. The
 [`.gitignore`](.gitignore) excludes:
 
-- **`.env`** — your live `ANTHROPIC_API_KEY`.
+- **`.env`** — local settings such as `CLAUDE_CLI`.
 - **`profile.md`** — your real PII (address, phone, visa, salary). Commit the
   sanitised `profile.example.md` instead.
 - **`tracker.json` / `tracker.db`** — your application history & recruiter emails.
@@ -317,8 +343,8 @@ This repo is configured so **no secrets or personal data are ever committed**. T
 When you clone fresh, copy the two `*.example` files, fill them in, and you're
 ready — your private data stays local.
 
-> **Security note:** if a real API key was ever committed or shared, rotate it at
-> <https://console.anthropic.com> → API Keys. Keys are billed against your account.
+> **Security note:** the pipeline needs no API key. If an old Anthropic API key was ever
+> committed or shared, rotate or delete it at <https://console.anthropic.com> → API Keys.
 
 ---
 
@@ -326,11 +352,13 @@ ready — your private data stays local.
 
 | Symptom | Fix |
 |---------|-----|
-| `ANTHROPIC_API_KEY not found` | Ensure `.env` exists with the key, or set the env var; reopen the terminal. |
+| `Claude CLI not usable: login problem` | Run `claude` in a terminal and log in again (same Windows user as the scheduled task). |
+| `Claude CLI not usable: usage limit` | Your plan's limit is used up; the run stops, nothing is lost, and the next run continues. Schedule the run before you use Claude for other work. |
+| `Claude Code CLI not found` | Install it, or set `CLAUDE_CLI` in `.env` to the full path of `claude.exe`. |
 | `playwright install chromium` fails | Run the terminal as Administrator. |
 | A company returns 0 jobs | Its portal may have changed; open the URL manually. Proprietary portals are least reliable. |
 | Cover letter sounds generic | Add more specific detail to `profile.md`'s summary/experience. |
-| API rate-limit errors | Add a small `time.sleep()` between calls in `matcher.py`; free-tier keys have lower limits. |
+| Runs are slow | Each model call takes about 3-13 s through the CLI: 1 call to score, then for matches 1 cover letter and 1 resume. |
 
 See [`SETUP_GUIDE.md`](SETUP_GUIDE.md) for more.
 
