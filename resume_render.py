@@ -56,6 +56,10 @@ def _html(r: dict, fs: float) -> str:
         p.append(f"<div class='auth'>{html.escape(r['work_auth'])}</div>")
     if r.get("summary"):
         p.append(f"<h2>Professional Summary</h2><div>{b(r['summary'])}</div>")
+    p.append("<h2>Technical Skills</h2><div class='skills'>")
+    for s in r["skills"]:
+        p.append(f"<p><b>{html.escape(s['label'])}:</b> {html.escape(s['items'])}</p>")
+    p.append("</div>")
     p.append("<h2>Experience</h2>")
     for e in r["experience"]:
         p.append(f"<div class='row'><span>{html.escape(e['role'])}</span><span>{html.escape(e['dates'])}</span></div>")
@@ -72,41 +76,39 @@ def _html(r: dict, fs: float) -> str:
     for ed in r["education"]:
         p.append(f"<div class='row'><span>{html.escape(ed['degree'])}</span><span>{html.escape(ed['dates'])}</span></div>")
         p.append(f"<div class='sub'><span>{html.escape(ed['school'])}</span><span></span></div>")
-    p.append("<h2>Technical Skills</h2><div class='skills'>")
-    for s in r["skills"]:
-        p.append(f"<p><b>{html.escape(s['label'])}:</b> {html.escape(s['items'])}</p>")
-    p.append("</div>")
     css = (CSS.replace("@FS@", str(fs)).replace("@FS_SMALL@", str(round(fs - 0.5, 1)))
               .replace("@FS_H2@", str(round(fs + 0.5, 1))))
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>{html.escape(r['name'])} — Resume</title>"
             f"<style>{css}</style></head><body>{''.join(p)}</body></html>")
 
 
-def _trim_one(resume: dict) -> bool:
+def _trim_one(resume: dict) -> str | None:
     """Drop the lowest-ranked bullet from the section with the most bullets.
 
     Projects are trimmed first (down to 1 bullet each), then experience (down
-    to 2 per role). Returns False when nothing more can be dropped.
+    to 2 per role). Returns the dropped bullet text, or None when nothing more
+    can be dropped.
     """
     for entries, floor in ((resume.get("projects", []), 1), (resume["experience"], 2)):
         candidates = [e for e in entries if len(e["bullets"]) > floor]
         if candidates:
-            max(candidates, key=lambda e: len(e["bullets"]))["bullets"].pop()
-            return True
-    return False
+            return max(candidates, key=lambda e: len(e["bullets"]))["bullets"].pop()
+    return None
 
 
-def render_resume_pdf(resume: dict, out_path: str | Path) -> Path:
+def render_resume_pdf(resume: dict, out_path: str | Path, report: dict | None = None) -> Path:
     """Render `resume` to a one-page PDF at out_path (trims bullets if needed).
 
     Raises RuntimeError if it can't fit on one page. The resume dict passed in
-    is not modified.
+    is not modified. If `report` is given it is filled with {"font_pt": size used,
+    "dropped_bullets": [text, ...]} so nothing is cut silently.
     """
     from playwright.sync_api import sync_playwright
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     work = copy.deepcopy(resume)
+    dropped: list[str] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
@@ -117,9 +119,13 @@ def render_resume_pdf(resume: dict, out_path: str | Path) -> Path:
                     page.pdf(path=str(out_path), format="A4", print_background=True,
                              prefer_css_page_size=True)
                     if len(PdfReader(str(out_path)).pages) == 1:
+                        if report is not None:
+                            report.update({"font_pt": fs, "dropped_bullets": dropped})
                         return out_path
-                if not _trim_one(work):
+                cut = _trim_one(work)
+                if cut is None:
                     break
+                dropped.append(cut)
         finally:
             browser.close()
     if out_path.exists():

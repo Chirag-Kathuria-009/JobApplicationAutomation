@@ -21,6 +21,8 @@ ROLE_HEADINGS = [
     "day to day", "your day to day", "the opportunity", "about the opportunity", "what you will be doing",
     "aufgaben", "deine aufgaben", "ihre aufgaben", "dein job", "deine rolle", "ihre rolle", "das erwartet dich",
     "das erwartet sie",
+    "key job responsibilities", "job responsibilities", "a day in the life", "what you will be doing",
+    "your responsibilities include", "what to expect",
 ]
 SKILL_HEADINGS = [
     "your profile", "profile", "requirements", "your qualifications", "qualifications", "what you bring",
@@ -29,6 +31,8 @@ SKILL_HEADINGS = [
     "about you", "you bring", "minimum qualifications", "preferred qualifications", "basic qualifications",
     "anforderungen", "dein profil", "ihr profil", "qualifikationen", "das bringst du mit", "das bringen sie mit",
     "dein wissen", "was du mitbringst", "was sie mitbringen",
+    "what you ll need", "what youll need", "your skills", "technical skills", "skills and experience",
+    "basic requirements", "minimum requirements", "preferred skills", "desired skills", "ideal candidate",
 ]
 COMPANY_HEADINGS = [
     "about us", "about the company", "who we are", "the company", "our company", "our mission", "company",

@@ -997,10 +997,12 @@ def scrape_amazon(company: dict) -> list[dict]:
                         continue
 
                     seen.add(jid)
-                    raw_desc = " ".join(filter(None, [
+                    # Label the separate API fields so the requirements keep their own headings
+                    # (jd_cleaner prioritises role and requirements over the company pitch).
+                    raw_desc = "<br/>".join(filter(None, [
                         j.get("description", ""),
-                        j.get("basic_qualifications", ""),
-                        j.get("preferred_qualifications", ""),
+                        "<h3>Basic Qualifications</h3>" + j["basic_qualifications"] if j.get("basic_qualifications") else "",
+                        "<h3>Preferred Qualifications</h3>" + j["preferred_qualifications"] if j.get("preferred_qualifications") else "",
                     ]))
                     description = html_to_text(raw_desc).strip()
 

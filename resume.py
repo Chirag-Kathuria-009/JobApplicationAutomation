@@ -42,7 +42,9 @@ TECH_VOCAB_PATH = BASE_DIR / "tech_vocabulary.json"
 PROJECTS_SHOWN = 3
 MAX_BOLD_TERMS = 15
 MAX_BULLET_WORDS = 50
-MAX_SUMMARY_WORDS = 85
+MAX_SUMMARY_WORDS = 75
+MAX_SKILL_GROUPS = 6
+MAX_SKILL_ITEMS = 8
 JD_CHARS_FOR_RESUME = 4000
 
 
@@ -50,62 +52,7 @@ class ResumeError(Exception):
     """Tailoring failed (invalid model output after a retry, or render failure)."""
 
 
-RESUME_SYSTEM_PROMPT = """You are an expert resume editor specializing in Data Engineering / Data Science / AI Engineering roles.
-
-I will provide:
-1. My base resume (as JSON)
-2. A job description (responsibilities, requirements and company context only)
-
-Your task is to tailor my resume specifically for this job while following STRICT constraints:
-
------------------------
-HARD CONSTRAINTS
------------------------
-- Keep the overall structure EXACTLY the same (Summary, Skills, Experience, Projects, Education).
-- Do NOT add new sections. Do NOT remove any experience role.
-- Show exactly 3 projects (the most relevant to the job, most relevant first), as my individual resumes do.
-- Resume must remain within ONE PAGE: keep text concise, at most 4 bullets for the most recent role, 2-3 for others, 2-3 per project.
-- Avoid fluff or generic statements.
-- No fake experience - only reframe and optimize existing content.
-- NEVER invent a number, metric, tool, technology, employer, certification or business impact. Every number in a bullet must already appear in that entry's original bullets. Do NOT mention any technology that is not already in my base resume, even if the job description asks for it (a skill I lack must simply be left out).
-- Maintain realistic, explainable claims I can justify in an interview.
-
------------------------
-OBJECTIVE
------------------------
-Maximize alignment with the job description, improve ATS keyword matching, highlight the most relevant skills and experience, and make everything easy to justify in interviews.
-
------------------------
-WHAT TO MODIFY
------------------------
-1. SUMMARY
-- Rewrite to align with the job role; 3-4 lines (max ~70 words); impact + specialization.
-- Include key tools/skills from the JD ONLY if they are already in my base resume. No keyword stuffing.
-
-2. SKILLS
-- Reorder groups and items by relevance to the JD; group logically; remove less relevant items.
-- Add a skill ONLY if it is already mentioned in my base resume (bullets, projects or skills).
-- Do NOT include a "Languages" group (it is added automatically).
-
-3. EXPERIENCE AND PROJECTS - STAR-STYLE BULLETS
-- Rewrite every bullet as ONE short sentence (max ~30 words) in STAR form: the problem/situation, the steps I took (with the tools), and the outcome/achievement. For example: "<problem or goal>; <what I did, with tools>, <result with its metric>."
-- Use only facts already in the original bullet. If the original states no problem, or no measurable outcome, leave that part out rather than inventing it.
-- Put the most relevant bullets first. Use the JD's terminology where it truthfully describes what I did.
-
-4. KEYWORD ALIGNMENT
-- Naturally include JD keywords that I genuinely have; avoid unnatural stuffing.
-
------------------------
-OUTPUT FORMAT
------------------------
-Respond ONLY with valid JSON (no markdown, no explanation, no comments):
-{
-  "summary": "...",
-  "skills": [{"label": "Programming", "items": ["Python", "SQL"]}],
-  "experience": {"<role id>": ["bullet 1", "bullet 2"]},
-  "projects": [{"id": "<project id>", "bullets": ["bullet 1", "bullet 2"]}]
-}
-"experience" must contain every role id from the base resume. "projects" must contain exactly 3 project ids from the base resume."""
+RESUME_SYSTEM_PROMPT = (BASE_DIR / "resume_prompt.md").read_text(encoding="utf-8")   # edit that file to change the instructions
 
 
 # --------------------------------------------------------------------------- #
@@ -198,9 +145,14 @@ def _load_vocab() -> list[str]:
     return []
 
 
+def _term_regex(term: str) -> str:
+    """Whole-word pattern for a term; spaces may be missing or a hyphen ("Power BI" ~ "PowerBI")."""
+    return rf"(?<![\w+#.]){re.escape(term).replace(chr(92) + ' ', '[\\s-]?')}(?![\w+#])"
+
+
 def _mentions(term: str, text: str) -> bool:
     """Whole-word, case-insensitive occurrence of `term` in `text`."""
-    return re.search(rf"(?<![\w+#.]){re.escape(term)}(?![\w+#])", text, flags=re.I) is not None
+    return re.search(_term_regex(term), text, flags=re.I) is not None
 
 
 def unowned_tools(text: str, base_text: str, owned: set[str], vocab: list[str]) -> list[str]:
@@ -307,9 +259,21 @@ def validate_tailored(base: dict, out) -> tuple[list[str], dict, list[str]]:
         if len(skills_clean) < 3:
             errs.append("skills must keep at least 3 groups of skills that exist in the base resume")
 
-    cleaned = {"summary": summary.strip(), "skills": skills_clean,
+    # "Remove less relevant skills": the model orders by relevance, so cap groups/items from the tail.
+    skills_trimmed = [f"{g['label']}: {it}" for g in skills_clean[MAX_SKILL_GROUPS:] for it in g["items"]]
+    skills_clean = skills_clean[:MAX_SKILL_GROUPS]
+    for g in skills_clean:
+        skills_trimmed += [f"{g['label']}: {it}" for it in g["items"][MAX_SKILL_ITEMS:]]
+        g["items"] = g["items"][:MAX_SKILL_ITEMS]
+
+    cleaned = {"summary": summary.strip(), "skills": skills_clean, "skills_trimmed": skills_trimmed,
                "experience": exp_clean, "projects": proj_clean}
     return errs, cleaned, removed
+
+
+_INVENTED_NEED = re.compile(
+    r"^\W*(needed|needs|need to|the (business|company|team|client|customers?|stakeholders?|management) "
+    r"(needed|needs|wanted|required))\b", re.I)
 
 
 def _check_bullets(owner: str, bullets: list[str], originals: list[str], base_text: str,
@@ -317,6 +281,9 @@ def _check_bullets(owner: str, bullets: list[str], originals: list[str], base_te
     errs = []
     allowed_nums = _numbers(" ".join(originals))
     for b in bullets:
+        if _INVENTED_NEED.match(b):
+            errs.append(f"'{owner}': bullet opens with a generic need that is not in the original "
+                        f"(state a problem from the original wording, or start with the action): {b[:60]!r}")
         if len(b.split()) > MAX_BULLET_WORDS:
             errs.append(f"'{owner}': a bullet is over {MAX_BULLET_WORDS} words: {b[:60]!r}")
         extra = _numbers(b) - allowed_nums
@@ -351,6 +318,18 @@ def _display_terms(base: dict) -> list[str]:
                 names.add(item.strip())
     names |= {x for x in base.get("extra_allowed_terms", []) if len(x) > 1}
     return sorted(names)
+
+
+def jd_hints(base: dict, jd_text: str) -> dict:
+    """{"owned": job keywords that ARE on the resume (most mentioned first),
+        "gaps": technologies the job names that are NOT on the resume}."""
+    base_text = _all_base_text(base)
+    owned_set = allowed_terms(base)
+    counts = {t: len(re.findall(_term_regex(t), jd_text, flags=re.I)) for t in _display_terms(base)}
+    owned = [t for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower())) if n][:25]
+    gaps = sorted(v for v in _load_vocab()
+                  if _mentions(v, jd_text) and v.lower() not in owned_set and not _mentions(v, base_text))
+    return {"owned": owned, "gaps": gaps}
 
 
 def pick_bold_terms(base: dict, jd_text: str, resume: dict) -> list[str]:
@@ -441,7 +420,12 @@ def rewrite_resume(base: dict, profile: str, job_title: str, jd_clean: str,
     Returns (raw_model_output, cleaned_output, removed_skills). Raises ResumeError
     if the second attempt is still invalid.
     """
+    hints = jd_hints(base, jd_clean)
     message = (f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_clean}\n\n"
+               f"JOB KEYWORDS THAT ARE ON MY RESUME (weave these in naturally where they truthfully apply): "
+               f"{', '.join(hints['owned']) or '(none found)'}\n"
+               f"TECHNOLOGIES THE JOB MENTIONS THAT ARE NOT ON MY RESUME (never mention these): "
+               f"{', '.join(hints['gaps']) or '(none)'}\n\n"
                f"BASE RESUME (JSON):\n{_base_for_prompt(base, profile)}")
     problems: list[str] = []
     for attempt in (1, 2):
@@ -497,15 +481,17 @@ def generate_tailored_resume(base: dict, profile: str, company_name: str, job_ti
 
     out_dir = Path(out_dir)
     pdf_path, audit_path = resume_paths(base, company_name, job_title, out_dir)
+    render_report: dict = {}
     try:
-        render_resume_pdf(resume, pdf_path)
+        render_resume_pdf(resume, pdf_path, render_report)
     except Exception as e:
         raise ResumeError(f"render failed: {e}") from e
 
     originals = {e["id"]: [b["text"] for b in e["bullets"]] for sec in ("experience", "projects") for e in base[sec]}
     audit = {
         "company": company_name, "job_title": job_title, "profile": profile,
-        "job_text_used": jd_clean, "removed_skills": removed, "bold_terms": resume["bold_terms"],
+        "job_text_used": jd_clean, "removed_skills": removed, "skills_trimmed": cleaned.get("skills_trimmed", []),
+        "bold_terms": resume["bold_terms"], "job_hints": jd_hints(base, jd_clean), "render": render_report,
         "summary": cleaned["summary"],
         "experience": {rid: {"original": originals[rid], "rewritten": b} for rid, b in cleaned["experience"].items()},
         "projects": {p["id"]: {"original": originals[p["id"]], "rewritten": p["bullets"]} for p in cleaned["projects"]},

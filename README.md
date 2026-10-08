@@ -2,7 +2,7 @@
 
 An end-to-end pipeline that **finds, scores, and drafts applications** for data
 roles across European company career portals. It scrapes jobs from many Applicant
-Tracking Systems (ATS), uses the **Claude API** to score how well each role fits
+Tracking Systems (ATS), uses **Claude (through the Claude Code CLI, no API key)** to score how well each role fits
 your profile, and auto-generates tailored **cover letters** and **resumes** for the
 strong matches. Everything is logged to a tracker and viewable in a local web
 dashboard.
@@ -90,7 +90,7 @@ dashboard.
                           dashboard.py  →  http://127.0.0.1:8000
 ```
 
-The Claude API is only ever called for **new** jobs that pass the cheap pre-filters
+Claude is only ever called for **new** jobs that pass the cheap pre-filters
 — already-seen jobs are skipped via the tracker, and below-threshold jobs are
 recorded so they are not re-scored on the next run.
 
@@ -229,7 +229,7 @@ atomic and keep a `.bak`. A job with unfinished steps has status `in_progress`
 and keeps its job text, so the next run finishes it first, without re-scoring and
 without redoing a finished step, even if the posting is gone. Each step is tried
 at most 3 times across runs, then the job ends as `resume_failed` or
-`needs_attention`. If the API key is rejected, credit runs out, or 3 calls in a row
+`needs_attention`. If Claude is not logged in, your usage limit is reached, or 3 calls in a row
 fail, the run stops with exit code 2 and the rest stays pending (`last_run.json`
 records why). Files already on disk are reused. A lock file stops two runs
 overlapping (exit code 3). `python run_pipeline.py --pending-only` finishes
@@ -238,7 +238,7 @@ posting id, URL without tracking parameters, company + title (ignoring GmbH/AG
 and (m/w/d)), or identical job text under the same company; the same role in
 several cities counts as one application. Tests: `python tests/test_recovery.py`.
 
-**Tailored resume PDFs.** The model rewrites your base resume for the job
+**Tailored resume PDFs.** The instructions the model follows are your own resume prompt, kept in `resume_prompt.md` (edit it there; no code change needed), plus STAR-bullet and no-invention rules. The PDF sections are always Summary, Skills, Experience, Projects, Education, on one page; the audit file also lists the job's technologies that are NOT on your resume, any skills cut for space and any bullets dropped to fit. The model rewrites your base resume for the job
 (summary, skill order, STAR-style bullets, the 3 most relevant projects) and
 returns JSON; fixed facts (titles, companies, dates, education) come from
 `base.json`. Code then rejects the rewrite (one retry, then `resume_failed`) if a
@@ -318,12 +318,15 @@ requirement (`requires_english`), and extract a best-effort recruiter contact em
 
 ---
 
-## Cost
+## Cost and usage limits
 
-Scoring uses `claude-sonnet-4-6` at roughly **$0.003 per job scored**. A full run
-of ~57 companies × ~3 jobs ≈ **$0.50**, plus ~$0.10 for ~10 cover letters — about
-**$0.60 per daily run**. Because the tracker skips already-seen jobs, steady-state
-daily runs cost far less (only genuinely new postings are billed).
+There is no per-call cost: every model call runs through the Claude Code CLI on your
+Claude subscription, so what matters is your plan's **usage limit**, not money. Per
+new job the pipeline makes 1 scoring call, and for matches (score >= 0.60) 1 cover
+letter call and (score >= 0.70) 1 resume call; each takes roughly 3-13 seconds. The
+tracker and duplicate check mean only genuinely new jobs use any of it. If the limit
+is reached mid-run, the run stops cleanly and the next run continues where it left
+off. Schedule it early in the day, before you use Claude for other work.
 
 ---
 
