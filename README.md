@@ -238,6 +238,10 @@ posting id, URL without tracking parameters, company + title (ignoring GmbH/AG
 and (m/w/d)), or identical job text under the same company; the same role in
 several cities counts as one application. Tests: `python tests/test_recovery.py`.
 
+**Sitemap careers sites (BMW).** Sites whose search is drawn by JavaScript but which publish a sitemap (BMW Group, on SAP SuccessFactors) use `"ats": "Sitemap"`: the scraper reads the sitemap and the public job pages only (never the `/services/` API, which BMW's robots.txt disallows), keeps data-role titles at German sites, and applies the language rule below locally (no model tokens).
+
+**Language rule (all companies and boards).** A posting is kept when English is what is needed, or the posting is simply written in English, and German is at most optional ("a plus", "nice to have", "von Vorteil", "not required"). It is dropped when German is required ("fluent German", "verhandlungssicher", "B2") or is mentioned without being called optional. A posting written in German is kept only if it says English is needed and German is optional. Text too short to judge (placeholder descriptions) passes. The decision and its reason are saved on the tracker entry as `language`. This is plain text rules, so unusual phrasings can be misjudged either way; `tests/test_language.py` lists the covered cases.
+
 **Tailored resume PDFs.** The instructions the model follows are your own resume prompt, kept in `resume_prompt.md` (edit it there; no code change needed), plus STAR-bullet and no-invention rules. The PDF sections are always Summary, Skills, Experience, Projects, Education, on one page; the audit file also lists the job's technologies that are NOT on your resume, any skills cut for space and any bullets dropped to fit. The model rewrites your base resume for the job
 (summary, skill order, STAR-style bullets, the 3 most relevant projects) and
 returns JSON; fixed facts (titles, companies, dates, education) come from

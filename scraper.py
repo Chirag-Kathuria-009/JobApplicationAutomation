@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from urllib.parse import urljoin, quote
+from urllib.parse import urljoin, quote, unquote
 from xml.etree import ElementTree as ET
 import httpx
 from bs4 import BeautifulSoup
@@ -172,15 +172,134 @@ def _greenhouse_first_published(handle: str, job_id) -> str:
     return ""
 
 
-def requires_english(description: str) -> bool:
-    """Return True if the posting references English as a language.
+# --------------------------------------------------------------------------- #
+# Language requirements: keep a job when English is what is needed and German is
+# at most optional ("nice to have", "a plus", "von Vorteil", "not required").
+# Deterministic text rules - no model call, no tokens.
+# --------------------------------------------------------------------------- #
+_LANG_CONTEXT = re.compile(
+    r"language|speak|spoken|speaking|written|fluent|fluency|proficien|knowledge|skills|communicat|native|"
+    r"bilingual|kenntnis|sprach|sprech|verhandlungssicher|fließend|fliessend|command|level|mother tongue|"
+    r"muttersprach|\b[abc][12]\b|deutschkenntnisse|englischkenntnisse|fremdsprach", re.I)
+_GERMAN = re.compile(r"\b(german|deutsch(?!land|e bank|e telekom|e bahn|e post|e börse|e lufthansa)\w*)", re.I)
+_ENGLISH = re.compile(r"\b(english|englisch\w*)\b", re.I)
+_OPTIONAL_CUE = re.compile(
+    r"nice[- ]to[- ]have|a plus|\bplus\b|an asset|\basset\b|advantage|beneficial|bonus|desirable|preferred|"
+    r"optional|welcome|would be (?:great|an advantage|helpful)|not (?:required|necessary|needed|mandatory)|"
+    r"no (?:\w+ ){0,3}(?:required|needed|necessary)|wünschenswert|von vorteil|vorteilhaft|idealerweise|"
+    r"nicht (?:erforderlich|notwendig|zwingend|nötig)|ein plus|hilfreich|kein muss|"
+    r"keine? (?:\w+ ){0,3}(?:erforderlich|vorausgesetzt|notwendig)|ohne deutsch", re.I)
+_REQUIRED_CUE = re.compile(
+    r"required|require[sd]?\b|must|mandatory|essential|fluent|fluency|proficien\w*|excellent|very good|strong|"
+    r"good|solid|advanced|native|business[- ](?:level|fluent)|working knowledge|command of|\b[bc][12]\b|"
+    r"erforderlich|zwingend|vorausgesetzt|voraussetzung|verhandlungssicher|fließend|fliessend|"
+    r"sehr gute\w*|gute\w*|exzellent\w*|muttersprach\w*|notwendig|nötig|sicher\w*", re.I)
+# German postings that don't spell out the requirement are treated as requiring German.
+AMBIGUOUS_GERMAN_IS_REQUIRED = True
 
-    Matches the word "English" across several languages so that a posting
-    written in (e.g.) German that asks for "gute Englischkenntnisse" is still
-    recognised as requiring English.
+
+# "English (required)", "German a plus": a cue right next to the language name is context enough.
+_ADJACENT = re.compile(
+    r"\b(?:english|englisch\w*|german|deutsch\w*)\b\W{0,3}(?:\w+\W{1,3}){0,2}?"
+    r"(?:required|mandatory|essential|must|nice[- ]to[- ]have|a plus|plus|preferred|optional|fluent|native|"
+    r"erforderlich|von vorteil|wünschenswert)", re.I)
+
+
+def _piece_states(piece: str, langs: dict) -> dict[str, str]:
+    """State per language for one piece of text (the language-context test was already done)."""
+    out: dict[str, str] = {}
+    opts = [m.span() for m in _OPTIONAL_CUE.finditer(piece)]
+    masked = piece
+    for x, y in opts:                      # "not required" must not count as "required"
+        masked = masked[:x] + " " * (y - x) + masked[y:]
+    reqs = [m.span() for m in _REQUIRED_CUE.finditer(masked)]
+
+    def dist(span, pos):
+        return 0 if span[0] <= pos <= span[1] else min(abs(span[0] - pos), abs(span[1] - pos))
+
+    for name, m in langs.items():
+        pos = m.start()
+        if opts:
+            d_self = min(dist(sp, pos) for sp in opts)
+            others = [o.start() for k, o in langs.items() if k != name]
+            d_other = min((min(dist(sp, op) for sp in opts) for op in others), default=10**9)
+            if d_self <= d_other:          # the optional cue sits closest to this language
+                out[name] = "optional"
+                continue
+        out[name] = "required" if reqs else "mentioned"
+    return out
+
+
+def _clause_states(clause: str) -> dict[str, str]:
+    """{"english": state, "german": state} for one clause; state in required|optional|mentioned."""
+    langs = {"english": _ENGLISH.search(clause), "german": _GERMAN.search(clause)}
+    langs = {k: m for k, m in langs.items() if m}
+    if not langs or not (_LANG_CONTEXT.search(clause) or _ADJACENT.search(clause)):
+        return {}
+    splitter = re.compile(r",|\bbut\b|\bwhile\b|\bwhereas\b|\baber\b|\bjedoch\b", re.I)
+    if len(langs) == 2 and splitter.search(clause):
+        # "German is a plus, fluent English required" / "German helps but English is needed":
+        # judge each part on its own
+        pieces = splitter.split(clause)
+        per = [(p, {k: v for k, v in (("english", _ENGLISH.search(p)), ("german", _GERMAN.search(p))) if v})
+               for p in pieces]
+        if all(len(l) <= 1 for _, l in per):
+            merged: dict[str, str] = {}
+            rank = {"mentioned": 1, "optional": 0, "required": 2}
+            for p, l in per:
+                for k, v in (_piece_states(p, l) if l else {}).items():
+                    if k not in merged or rank[v] > rank[merged[k]]:
+                        merged[k] = v
+            return merged
+    return _piece_states(clause, langs)
+
+
+def assess_language(text: str) -> dict:
+    """Judge a posting's language requirements.
+
+    Returns {"ok": bool, "note": str, "english": state, "german": state, "text_language": en|de|unknown}.
+    ok = English is what is needed (or the posting is simply written in English) AND German is
+    not required (absent or optional). Unassessable text (short / placeholder) passes.
     """
-    desc_lower = description.lower()
-    return any(token in desc_lower for token in ENGLISH_LANGUAGE_TOKENS)
+    text = text or ""
+    if len(text) < 200 or text.startswith("Role at "):
+        return {"ok": True, "note": "text too short to assess language", "english": "none",
+                "german": "none", "text_language": "unknown"}
+    rank = {"none": 0, "optional": 1, "mentioned": 2, "required": 3}
+    state = {"english": "none", "german": "none"}
+    for clause in re.split(r"[.!?;\n•|]+", text):
+        for lang, st in _clause_states(clause).items():
+            if rank[st] > rank[state[lang]]:     # strongest statement anywhere in the text wins
+                state[lang] = st
+    tl = detect_language(text)
+    en, de = state["english"], state["german"]
+
+    german_blocks = de == "required" or (de == "mentioned" and AMBIGUOUS_GERMAN_IS_REQUIRED)
+    if german_blocks:
+        note = "German required" if de == "required" else "German mentioned without saying it is optional"
+        ok = False
+    elif tl == "de":
+        # written in German: only acceptable if it says English is needed and German is optional
+        ok = en in ("required", "mentioned") and de == "optional"
+        note = ("English needed, German optional" if ok
+                else "posting is in German and does not make German optional")
+    else:
+        ok = True
+        if en in ("required", "mentioned") and de == "optional":
+            note = "English needed, German optional"
+        elif en in ("required", "mentioned"):
+            note = "English needed, German not required"
+        elif de == "optional":
+            note = "English posting, German optional"
+        else:
+            note = "English posting, German not mentioned"
+    return {"ok": ok, "note": note, "english": en, "german": de, "text_language": tl}
+
+
+def requires_english(description: str) -> bool:
+    """True if the posting passes the language criterion (English needed / English posting, German at most
+    optional). Name kept for the scrapers that already call it."""
+    return assess_language(description)["ok"]
 
 
 STALE_SKIPPED = 0  # postings dropped by the MAX_AGE_DAYS safety net this run (logged, not silent)
@@ -583,6 +702,8 @@ def scrape_radancy(company: dict) -> list[dict]:
             except Exception:
                 pass
 
+            if not requires_english(description):   # language criterion: English needed, German at most optional
+                continue
             jobs.append({
                 "title": title,
                 "description": description,
@@ -744,6 +865,8 @@ def scrape_smartrecruiters(company: dict) -> list[dict]:
             except Exception:
                 pass
 
+            if not requires_english(description):   # language criterion: English needed, German at most optional
+                continue
             jobs.append({
                 "title": title,
                 "description": description,
@@ -802,6 +925,8 @@ def scrape_recruitee(company: dict) -> list[dict]:
 
             description = html_to_text(o.get("description", "") or "").strip()
 
+            if not requires_english(description):   # language criterion: English needed, German at most optional
+                continue
             jobs.append({
                 "title": title,
                 "description": description[:MAX_DESCRIPTION_CHARS] or f"Role at {company['name']}.",
@@ -929,6 +1054,8 @@ def scrape_workday_cxs(company: dict, tenant: str, dc: str, site: str) -> list[d
                 if date_posted and not is_posted_within_days(date_posted):
                     continue
 
+                if not requires_english(description):   # language criterion: English needed, German at most optional
+                    continue
                 jobs.append({
                     "title": title,
                     "description": description,
@@ -1010,6 +1137,8 @@ def scrape_amazon(company: dict) -> list[dict]:
                     url = (f"https://www.amazon.jobs{job_path}" if job_path
                            else j.get("url_next_step", ""))
 
+                    if not requires_english(description):   # language criterion: English needed, German at most optional
+                        continue
                     jobs.append({
                         "title": title,
                         "description": description[:MAX_DESCRIPTION_CHARS] or f"Role at {company['name']}.",
@@ -1261,6 +1390,130 @@ def scrape_startup_source(source: dict) -> list[dict]:
     return jobs
 
 
+# --------------------------------------------------------------------------- #
+# Sitemap-based careers sites (e.g. BMW Group on SAP SuccessFactors)
+# --------------------------------------------------------------------------- #
+_GERMAN_STATE_CODES = ("BW", "BY", "BE", "BB", "HB", "HH", "HE", "MV", "NI", "NW", "RP", "SL", "SN", "ST", "SH", "TH")
+# Function words that are German-only / English-only (disjoint sets), for a dependency-free language guess.
+_DE_WORDS = frozenset("und der die das mit für von im ein eine zu den dem des auf ist wir du dich dein deine "
+                      "sie ihre bei als oder auch nach über sich werden wird unser unsere erfahrung kenntnisse "
+                      "studium aufgaben deiner dir uns eure".split())
+_EN_WORDS = frozenset("and the of to for with you your we our is are will be on as or at by from this that "
+                      "experience skills team work have has their".split())
+
+
+def detect_language(text: str) -> str:
+    """'de' | 'en' | 'unknown' from German vs English function-word counts (no model, no dependency)."""
+    words = re.findall(r"[a-zäöüß]+", (text or "").lower())
+    if len(words) < 40:
+        return "unknown"
+    de = sum(w in _DE_WORDS for w in words)
+    en = sum(w in _EN_WORDS for w in words)
+    return "de" if de > en else "en" if en > de else "unknown"
+
+
+def _data_role_title(title: str) -> bool:
+    """Data-domain titles only (no generic internship match), short keywords on word boundaries."""
+    t = title.lower()
+    if any(excl in t for excl in EXCLUDE_KEYWORDS):
+        return False
+    return any((re.search(rf"\b{re.escape(kw)}\b", t) if len(kw) <= 4 else kw in t) for kw in ROLE_KEYWORDS)
+
+
+def _slug_in_germany(slug: str) -> bool:
+    """BMW-style slugs end with '<state code> <postcode>' (e.g. 'BY 80809') for German sites."""
+    return bool(re.search(r"\b\d{5}\b", slug)
+                and re.search(r"\b(" + "|".join(_GERMAN_STATE_CODES) + r")\b", slug))
+
+
+def _parse_job_page_date(text: str) -> str:
+    """ISO date from a 'Posting Start Date:' / 'Startdatum der Ausschreibung:' label, '' if absent."""
+    m = re.search(r"(Posting Start Date|Startdatum der Ausschreibung)\s*:?\s*([0-9]{1,2}[./][0-9]{1,2}[./][0-9]{2,4})", text)
+    if not m:
+        return ""
+    german = m.group(1).startswith("Startdatum")
+    formats = ("%d.%m.%y", "%d.%m.%Y") if german else ("%m/%d/%y", "%m/%d/%Y")
+    for fmt in formats:
+        try:
+            return datetime.strptime(m.group(2), fmt).replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            continue
+    return ""
+
+
+def scrape_sitemap(company: dict) -> list[dict]:
+    """
+    Careers sites whose search is rendered by JavaScript but which publish a sitemap of
+    job pages (BMW Group). Only permitted paths are used: the sitemap and the static
+    /job/ pages. Nothing is spent on a model: the title, location and language are
+    filtered locally, and only the survivors are fetched (one at a time, 1 s apart,
+    at most `max_pages` per run).
+    """
+    base = company["careers_url"].rstrip("/")
+    job_path = company.get("job_path", "/job/")
+    days = company.get("max_age_days", MAX_AGE_DAYS)
+    name = company["name"]
+    try:
+        resp = httpx.get(company["sitemap_url"], headers=_FEED_HEADERS, timeout=30, follow_redirects=True)
+        if resp.status_code != 200:
+            print(f"  [Sitemap] {name}: HTTP {resp.status_code}")
+            return []
+    except Exception as e:
+        print(f"  [Sitemap] {name}: {e}")
+        return []
+
+    candidates = []
+    for url in re.findall(r"<loc>([^<]+)</loc>", resp.text):
+        if job_path not in url:
+            continue
+        slug = html.unescape(unquote(url.split(job_path, 1)[1].rstrip("/").rsplit("/", 1)[0])).replace("-", " ")
+        if _data_role_title(slug) and _slug_in_germany(slug):
+            candidates.append((url, slug))
+    total = len(candidates)
+    candidates = candidates[:company.get("max_pages", 40)]
+
+    jobs, german, stale = [], 0, 0
+    reasons: dict[str, int] = {}
+    for url, slug in candidates:
+        try:
+            page = httpx.get(url, headers=_FEED_HEADERS | {"Accept": "text/html,*/*"}, timeout=30, follow_redirects=True)
+            if page.status_code != 200:
+                continue
+            soup = BeautifulSoup(page.text, "html.parser")
+            box = soup.select_one(".jobDisplay") or soup.select_one(".job")
+            if not box:
+                continue
+            text = box.get_text("\n", strip=True)
+        except Exception:
+            continue
+        time.sleep(1.0)
+        verdict = assess_language(text)
+        if not verdict["ok"]:
+            german += 1
+            reasons[verdict["note"]] = reasons.get(verdict["note"], 0) + 1
+            continue
+        posted = _parse_job_page_date(text)
+        if not is_posted_within_days(posted, days):
+            stale += 1
+            continue
+        og = soup.find("meta", property="og:title")
+        title = (og.get("content") if og and og.get("content") else slug).strip()
+        city = slug.split(" ")[0]
+        jobs.append({
+            "title": title,
+            "description": text[:MAX_DESCRIPTION_CHARS],
+            "url": url,
+            "location": city,
+            "date_posted": posted,
+            "spoc_email": extract_spoc_email(text),
+            "ats": "Sitemap",
+            "language_note": verdict["note"],
+        })
+    print(f"  [Sitemap] {name}: {total} data-role pages in Germany, read {len(candidates)}; "
+          f"skipped {german} on language ({reasons}) and {stale} older than {days} days; kept {len(jobs)}")
+    return jobs
+
+
 def scrape_company(company: dict) -> list[dict]:
     """Main entry point. Routes to the right scraper based on ATS."""
     ats = company.get("ats", "Proprietary")
@@ -1280,6 +1533,8 @@ def scrape_company(company: dict) -> list[dict]:
         return scrape_workday(company)
     elif ats == "Radancy":
         return scrape_radancy(company)
+    elif ats == "Sitemap":
+        return scrape_sitemap(company)
     elif ats == "Amazon":
         return scrape_amazon(company)
     else:

@@ -380,10 +380,14 @@
       "name": "BMW Group",
       "category": "Automotive",
       "careers_url": "https://jobs.bmwgroup.com",
-      "ats": "Radancy",
+      "ats": "Sitemap",
+      "sitemap_url": "https://jobs.bmwgroup.com/sitemap.xml",
+      "job_path": "/job/",
+      "max_age_days": 30,
+      "max_pages": 40,
       "fit_tier": "C",
       "fit_reason": "Munich, large data team, but German often required.",
-      "notes": "Radancy/TalentBrew portal (jobs.bmwgroup.com). Covers data roles + Praktikum/Werkstudent (EN+DE)."
+      "notes": "SAP SuccessFactors site with JavaScript-rendered search, so the old Radancy HTML scraper found nothing. Its JSON search API sits under /services/, which robots.txt disallows, so this reads the public sitemap + /job/ pages instead (both allowed). Postings are kept only if English is what is needed and German is at most optional (checked locally, no model tokens)."
     },
     {
       "name": "Audi",

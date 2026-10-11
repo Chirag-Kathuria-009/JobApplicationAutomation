@@ -203,7 +203,7 @@ def load_companies(tier_filter: str = None, company_filter: str = None) -> list[
 def new_entry(company: str, role_title: str, role_url: str, fit_score: float, fingerprints: dict,
               status: str, date_posted: str = "", spoc_email: str = "", tier: str = "",
               source_channel: str = "", scores: dict = None, best_profile: str = "",
-              jd_text: str = "") -> dict:
+              jd_text: str = "", language: str = "") -> dict:
     """Build a tracker entry.
 
     `first_seen` is stamped once, when the job is first written; the dashboard
@@ -233,6 +233,7 @@ def new_entry(company: str, role_title: str, role_url: str, fit_score: float, fi
         "resume_attempts": 0,
         "cover_error": "",
         "resume_error": "",              # non-empty = last tailoring attempt failed
+        "language": language,            # why the posting passed the language rule
         "fingerprints": fingerprints,
         "notes": "",
     }
@@ -289,7 +290,7 @@ def print_summary(results: list[dict]):
 def run(args) -> int:
     # Lazy imports — only loaded when needed
     import scraper
-    from scraper import scrape_company, scrape_startup_source, load_startup_sources
+    from scraper import scrape_company, scrape_startup_source, load_startup_sources, assess_language
     from matcher import score_job_multi
     from cover_letter import generate_cover_letter
     from resume import generate_tailored_resume, existing_resume, load_base
@@ -533,7 +534,8 @@ def run(args) -> int:
                           "below_threshold" if below else "in_progress",
                           date_posted=job.get("date_posted", ""), spoc_email=job.get("spoc_email", ""),
                           tier=tier, source_channel=source_channel, scores=scores, best_profile=best,
-                          jd_text="" if below else jd_store)
+                          jd_text="" if below else jd_store,
+                          language=job.get("language_note") or assess_language(job["description"])["note"])
         if below:
             entry["stage"] = "done"
         tracker["applications"].append(entry)
